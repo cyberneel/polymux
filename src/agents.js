@@ -34,23 +34,30 @@ export function shownName(title) {
 // started it ended (and posted, say, a status update). The transcript knows: its last turn
 // entry is system/turn_duration once the turn is over. Other system notes and non-turn lines
 // (attachments, queue ops) are skipped; a user/assistant line means the turn is still live.
+// So is a local command (/model, /rename): its user lines start no turn, and the CLI's own
+// <synthetic> reply. A turn the user interrupted writes no turn_duration but is over. null = no
+// turn in sight.
 export function turnEnded(lines) {
   for (let i = lines.length - 1; i >= 0; i--) {
     let d;
     try { d = JSON.parse(lines[i]); } catch { continue; }
+    const c = d.message?.content;
+    if (d.type === 'user' && (d.isMeta || (typeof c === 'string' && /^\s*<(command-name|local-command-)/.test(c)))) continue;
+    if (d.type === 'assistant' && d.message?.model === '<synthetic>') continue;
+    if (d.type === 'user' && Array.isArray(c) && c.some((x) => x?.text?.startsWith('[Request interrupted by user'))) return true;
     if (d.type === 'user' || d.type === 'assistant') return false;
     if (d.type === 'system' && d.subtype === 'turn_duration') return true;
   }
-  return false;
+  return null;
 }
 // ponytail: reads the last 32KB per busy session per poll; cache on mtime if that ever shows up.
 function busyInBackground(a) {
   if (a?.status !== 'busy' || !a.cwd || !a.sessionId) return false;
   const t = tail(join(homedir(), '.claude', 'projects', a.cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${a.sessionId}.jsonl`));
-  return !!t && turnEnded(t.lines);
+  return !!t && turnEnded(t.lines) === true;
 }
 // A file's last 32KB as lines; `whole` when that is all of it.
-function tail(file) {
+export function tail(file) {
   let fd;
   try {
     fd = openSync(file, 'r');

@@ -6,13 +6,23 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { listSessions, createSession } from './tmux.js';
-import { getAgents, matchAgents } from './agents.js';
+import { getAgents, matchAgents, tail, turnEnded } from './agents.js';
 import { markProactive } from './origin.js';
 import { config } from './config.js';
 
 const DIR = join(homedir(), '.claude', 'cc-deck');
 const FILE = process.env.POLYMUX_RESTORE_FILE || join(DIR, 'restore.json');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const CUT_OFF = 'A host restart cut off your last turn mid-task. Pick up where you left off; if it was already finished, say so in one line.';
+
+// Was this session mid-turn when the host went down? Its transcript survives the reboot and
+// ends on a turn_duration line once a turn is over (the live status is gone by shutdown).
+// ponytail: Claude only; codex/agy keep their transcripts elsewhere and come back idle.
+export function cutOff(e) {
+  if (!e.resume || (e.kind && e.kind !== 'claude')) return false;
+  const t = tail(join(homedir(), '.claude', 'projects', e.dir.replace(/[^a-zA-Z0-9]/g, '-'), `${e.resume}.jsonl`));
+  return !!t && turnEnded(t.lines) === false;
+}
 
 // Write a snapshot of the currently-active sessions (atomic). Returns the count.
 // skipIfEmpty: don't clobber a good snapshot with an empty one — used on shutdown,
@@ -56,8 +66,11 @@ export async function restoreIfBoot() {
   // At a session cap only the most recently active come back (the snapshot is newest
   // first); the rest stay in History.
   for (const e of snap.sessions.slice(0, config.maxSessions || undefined)) {
+    // One that was mid-turn is told to carry on; otherwise it came back idle and the work
+    // (and any Friday bot waiting on it) just stopped.
+    const seed = cutOff(e) ? CUT_OFF : undefined;
     try {
-      await createSession({ dir: e.dir, title: e.title, resume: e.resume || undefined, kind: e.kind, origin: e.origin });
+      await createSession({ dir: e.dir, title: e.title, resume: e.resume || undefined, kind: e.kind, origin: e.origin, seed });
       restored += 1;
     } catch {
       // Resume id invalid / transcript gone → fall back to a fresh session in the dir.
