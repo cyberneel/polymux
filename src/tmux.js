@@ -176,6 +176,29 @@ export function trustKey(pane, yesRe) {
   return cur === yes ? 'Enter' : yes > cur ? 'Down' : 'Up';
 }
 
+// The pane's tty is in raw mode, i.e. the CLI reads keys itself. A CLI paints its prompt
+// before it switches the tty to raw, and until then the tty turns Enter (CR) into a newline
+// (LF), which the CLI reads as "new line", not "submit": under load the `/rename` Enter landed
+// in that window, the seed joined the same prompt, and a Deep Session's whole brief became its
+// title instead of its first message (2026-10-24). Unknown (no tty, no stty) counts as ready.
+async function rawMode(name) {
+  const tty = (await tmux(['display-message', '-p', '-t', name, '#{pane_tty}']).catch(() => '')).trim();
+  if (!tty) return true;
+  const out = await exec('stty', ['-F', tty, '-a']).then((r) => r.stdout, () => '');
+  return !out || /(^|\s)-icanon\b/.test(out);
+}
+
+// Until the screen shows `re`, press Enter again (an Enter on an empty prompt does nothing),
+// but never into a menu, where Enter picks the highlighted option.
+async function confirmSubmit(name, re, tries = 5) {
+  for (let i = 0; i < tries; i++) {
+    await sleep(1000);
+    const pane = await tmux(['capture-pane', '-p', '-t', name]).catch(() => '');
+    if (re.test(pane) || menuOptions(pane).length) return;
+    await tmux(['send-keys', '-t', name, 'Enter']).catch(() => {});
+  }
+}
+
 // Some setup can only happen once the CLI has booted to its prompt: `/rename` (the
 // persisted title comes from the slash command, not `--name`) and seeding an initial
 // prompt (e.g. a context handoff). But first we must clear the CLI's "trust this
@@ -197,12 +220,15 @@ async function scheduleBoot(name, { rename, seed, provider }) {
       if (key) await tmux(['send-keys', '-t', name, key]).catch(() => {});
       continue; // never type rename/seed into the trust menu; wait for the real prompt
     }
-    if (/\? for shortcuts|❯|esc to interrupt/.test(pane)) { // the CLI's UI is up
+    if (/\? for shortcuts|❯|esc to interrupt/.test(pane) && await rawMode(name)) { // the CLI's UI is up
       // pasteSubmit, not send-keys+Enter: an Enter inside the typing burst became a newline,
       // so the seed landed on the same prompt and the whole brief was submitted as the title.
-      if (rename) await pasteSubmit(name, `/rename ${rename}`);
+      // And the seed waits for the rename to show: a newline'd Enter is retried, not built on.
+      if (rename) {
+        await pasteSubmit(name, `/rename ${rename}`);
+        await confirmSubmit(name, /Session renamed to/);
+      }
       if (seed) {
-        if (rename) await sleep(600); // let the /rename submit first
         // seed may be a Promise (a handoff summary still building in the background) —
         // resolve it here, after Claude is up, so a slow `claude -p` never blocks the
         // HTTP request. On failure, drop a note instead of leaving the session silent.
