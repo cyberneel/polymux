@@ -34,10 +34,10 @@ addEventListener('keydown', (e) => {
     if (e.shiftKey ? i <= 0 : i < 0 || i === f.length - 1) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
   }
 }, true);
-// Inside the FridayOS hub: Ctrl+Alt+1/2/3 switches apps; the hub can't hear keys in this (cross-origin) frame, so
-// pass it up. Registered first (both entries import this module first), so the terminal's Alt+digit doesn't also fire.
+// Inside the FridayOS hub: Ctrl+~ goes to the next app; the hub can't hear keys in this (cross-origin) frame, so
+// pass it up. Capture phase on window, so the terminal never types it.
 if (parent !== window) addEventListener('keydown', (e) => {
-  if (e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey && !e.getModifierState('AltGraph') && /^Digit[1-9]$/.test(e.code)) {
-    e.preventDefault(); e.stopImmediatePropagation(); parent.postMessage({ hub: 'switch', n: +e.code[5] }, '*');
+  if (e.code === 'Backquote' && e.ctrlKey && !e.altKey && !e.metaKey) {
+    e.preventDefault(); e.stopImmediatePropagation(); parent.postMessage({ hub: 'next' }, '*');
   }
 }, true);
