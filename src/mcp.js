@@ -601,8 +601,9 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
       inputSchema: {
         session_id: z.string().describe("A Claude session id, the Deep Session's name (from list_sessions), or its title — must be live."),
         answer: z.string().min(1).describe("The user's answer, verbatim."),
+        expect: z.string().optional().describe("The label of the option the user picked, as they saw it. If the menu on screen no longer has it at that number (the question moved on), nothing is pressed."),
       },
-    }, async ({ session_id, answer }) => {
+    }, async ({ session_id, answer, expect }) => {
       const sessions = await liveSessions();
       const val = String(session_id || '').trim();
       const s = sessions.find((x) => x.name === val || x.liveSessionId === val || x.resumedFrom === val)
@@ -610,7 +611,8 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
       if (!s) return text(`ERROR: no live Deep Session matches "${session_id}". Live now: ${liveHint(sessions)}.`);
       const who = `"${s.title || s.name}"`;
       try {
-        const r = await answerPrompt(s.name, answer, waitState(s));
+        const r = await answerPrompt(s.name, answer, waitState(s), expect);
+        if (r.changed) return text(redact(`ERROR: ${who} moved on to another question before that landed, so nothing was sent. It now shows: ${r.opts.map((o) => `${o.n}. ${o.label}`).join(' · ')}.`));
         if (r.opts) return text(redact(`ERROR: ${who} is showing a choice, so nothing was sent. Answer with one of: ${r.opts.map((o) => `${o.n}. ${o.label}`).join(' · ')}, or esc.`));
         if (r.typed) return text(redact(`Typed the answer into ${who}.`));
         return text(redact(r.key === 'Escape' ? `Pressed Esc in ${who}.` : `Chose ${r.key}. ${r.label} in ${who}${r.type ? ' and typed the answer' : ''}.`));

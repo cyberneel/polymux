@@ -113,6 +113,14 @@ test('handoff into a running session waits out a menu, then types', async (t) =>
   assert.equal(p.log(), 'line:read the handoff\n');
 });
 
+test('a tap meant for an earlier question presses nothing on the next one', async (t) => {
+  const p = await pane(t, [['❯ 1. Small', '  2. Large', '  3. Type something.']]);
+  assert.deepEqual((await answerPrompt(p.name, '1', true, 'Red')).changed, true);
+  assert.equal((await answerPrompt(p.name, '2', true, 'Large')).key, '2');
+  await sleep(300);
+  assert.equal(p.log(), 'menu-key\n');
+});
+
 // A pane left scrolled up is in tmux copy-mode, where send-keys is read as scroll commands.
 for (const keys of ['emacs', 'vi']) {
   test(`a scrolled-up pane still gets the text and the menu key (${keys} copy-mode)`, async (t) => {

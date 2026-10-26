@@ -319,14 +319,16 @@ export function pickOption(opts, answer) {
 }
 
 // Answer a managed session's prompt with the user's own words: a key press when a
-// menu is up (`waiting`), else typed in and submitted like sendText.
-export async function answerPrompt(name, answer, waiting) {
+// menu is up (`waiting`), else typed in and submitted like sendText. `expect` = the label of
+// the option the user tapped: a multi-question picker moves on to the next question (same
+// numbers) the moment one is answered, so a stale or second tap would answer one they never saw.
+export async function answerPrompt(name, answer, waiting, expect) {
   assertManaged(name);
   await leaveCopyMode(name);
   const opts = await openMenu(name, waiting);
   if (!opts.length) { await sendText(name, answer); return { typed: true }; }
   const pick = pickOption(opts, answer);
-  if (!pick) return { opts };
+  if (!pick || (expect && pick.label !== expect)) return { opts, changed: !!pick };
   await tmux(['send-keys', '-t', name, ...(pick.keys || [pick.key])]);
   if (pick.type) { await sleep(400); await sendText(name, answer); }
   return pick;
