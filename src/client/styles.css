@@ -223,7 +223,7 @@ select { font-family: inherit; background: var(--bg); border: 1px solid var(--li
   content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 36px;
   background: linear-gradient(transparent, var(--surface));
 }
-.card-foot { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--hair); }
+.card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 14px; border-top: 1px solid var(--hair); }
 /* Status is a dot plus a label: working = fg with the calm pulse, your turn = fg, stopped = muted, needs you = red. */
 .badge { font-size: 12px; display: inline-flex; align-items: center; gap: 6px; color: var(--fg); }
 .badge.idle { color: var(--muted); }
