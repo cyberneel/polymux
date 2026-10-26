@@ -26,13 +26,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux git ripgre
     # (src/providers/claude.js CHROME_MCP) so the shared-browser MCP resolves from
     # disk instantly instead of an @latest npx re-resolve that can blow the connect
     # timeout. Keep the version in sync with claude.js when bumping.
-    && npm install -g @anthropic-ai/claude-code @openai/codex chrome-devtools-mcp@1.9.0 \
+    && npm install -g chrome-devtools-mcp@1.9.0 \
+    && npm cache clean --force
+# The CLIs Polymux runs, in their own layer: build-images.sh passes CLI_REV (the date), so a day's
+# first build reinstalls only this layer at the latest versions. The hosted rootfs is read-only, so
+# their own auto-updaters stay off; they update with the image.
+# agy (Google Antigravity CLI): install from Google's official bootstrapper at
+# build time — each build pulls straight from Google, so we never redistribute
+# the binary. Download-to-file (NOT `curl | bash`, whose pipeline masks a failed
+# fetch), then `agy --version` so the build FAILS if the install silently no-ops
+# or the binary can't run — rather than shipping an image that lacks agy.
+ARG CLI_REV
+RUN npm install -g @anthropic-ai/claude-code @openai/codex \
     && npm cache clean --force \
-    # agy (Google Antigravity CLI): install from Google's official bootstrapper at
-    # build time — each build pulls straight from Google, so we never redistribute
-    # the binary. Download-to-file (NOT `curl | bash`, whose pipeline masks a failed
-    # fetch), then `agy --version` so the build FAILS if the install silently no-ops
-    # or the binary can't run — rather than shipping an image that lacks agy.
     && curl -fsSL --compressed https://antigravity.google/cli/install.sh -o /tmp/agy-install.sh \
     && bash /tmp/agy-install.sh --dir /usr/local/bin \
     && rm -f /tmp/agy-install.sh \
@@ -41,6 +47,8 @@ WORKDIR /app
 # Bind 0.0.0.0 INSIDE the container; restrict exposure with the host port mapping
 # (e.g. `-p 127.0.0.1:8787:8787`). Roots default to the mounted /workspace.
 ENV HOME=/home/node \
+    DISABLE_AUTOUPDATER=1 \
+    AGY_CLI_DISABLE_AUTO_UPDATE=1 \
     NODE_ENV=production \
     POLYMUX_BIND=0.0.0.0 \
     POLYMUX_ROOTS=/workspace
