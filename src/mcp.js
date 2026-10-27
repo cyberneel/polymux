@@ -61,6 +61,26 @@ async function resolveTranscriptId(arg) {
   return h ? h.sessionId : null;
 }
 
+// Reopen a past Claude Deep Session with its full conversation (resume_session, and a send to
+// one the deck closed). origin 'proactive' lets it close again once its work is done (slots.js).
+async function resumePast(session_id, prompt, origin) {
+  try {
+    const id = await resolveTranscriptId(session_id);
+    if (!id) return `ERROR: no Deep Session matches "${session_id}". Pass a sessionId from search_sessions / list_recent_sessions, or an exact title.`;
+    const running = (await liveSessions()).find((s) => s.liveSessionId === id || s.resumedFrom === id || s.parked?.main === id);
+    if (running?.parked?.main === id) return redact(`"${running.title || running.name}" (${running.name}) holds it, parked in a background job — the user can switch it back with "↩ main" on the dashboard.`);
+    if (running) return redact(`"${running.title || running.name}" is already running (${running.name}) — use send_to_session to talk to it.`);
+    const dir = await resolveSessionCwd(id);
+    if (!dir) return `ERROR: can't tell which folder Deep Session ${id} ran in.`;
+    const { title } = await transcriptMeta(await findTranscriptFile(id)).catch(() => ({}));
+    const seed = [await consumeNotesSeed(id), prompt].filter(Boolean).join('\n\n') || undefined;
+    if (queued().some((q) => q.resume === id)) return redact(`"${title || id}" is already waiting for a slot on this deck; it resumes by itself when one opens.`);
+    const { name, queued: place } = await startOrQueue({ dir, title, resume: id, seed, origin });
+    if (place) return redact(`Queued Deep Session ${name} ("${title || id}") in ${dir}: ${FULL(place)}`);
+    return redact(`Resumed Deep Session ${name} ("${title || id}") in ${dir}${prompt ? ' and typed your prompt into it' : ''}. It has its full conversation back.`);
+  } catch (e) { return `ERROR: could not resume — ${e.message}`; }
+}
+
 // Resolve an id-or-title to the session's working directory: the cwd recorded in
 // its transcript (works for live + past), falling back to a live session's tmux
 // dir (for a just-booted session with no transcript yet). Absolute, or null.
@@ -522,23 +542,7 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
         session_id: z.string().describe('A sessionId (from search_sessions / list_recent_sessions) or the Deep Session title.'),
         prompt: z.string().optional().describe('Optional instruction to type into it once it has resumed.'),
       },
-    }, async ({ session_id, prompt }) => {
-      try {
-        const id = await resolveTranscriptId(session_id);
-        if (!id) return text(`ERROR: no Deep Session matches "${session_id}". Pass a sessionId from search_sessions / list_recent_sessions, or an exact title.`);
-        const running = (await liveSessions()).find((s) => s.liveSessionId === id || s.resumedFrom === id || s.parked?.main === id);
-        if (running?.parked?.main === id) return text(redact(`"${running.title || running.name}" (${running.name}) holds it, parked in a background job — the user can switch it back with "↩ main" on the dashboard.`));
-        if (running) return text(redact(`"${running.title || running.name}" is already running (${running.name}) — use send_to_session to talk to it.`));
-        const dir = await resolveSessionCwd(id);
-        if (!dir) return text(`ERROR: can't tell which folder Deep Session ${id} ran in.`);
-        const { title } = await transcriptMeta(await findTranscriptFile(id)).catch(() => ({}));
-        const seed = [await consumeNotesSeed(id), prompt].filter(Boolean).join('\n\n') || undefined;
-        if (queued().some((q) => q.resume === id)) return text(redact(`"${title || id}" is already waiting for a slot on this deck; it resumes by itself when one opens.`));
-        const { name, queued: place } = await startOrQueue({ dir, title, resume: id, seed });
-        if (place) return text(redact(`Queued Deep Session ${name} ("${title || id}") in ${dir}: ${FULL(place)}`));
-        return text(redact(`Resumed Deep Session ${name} ("${title || id}") in ${dir}${prompt ? ' and typed your prompt into it' : ''}. It has its full conversation back.`));
-      } catch (e) { return text(`ERROR: could not resume — ${e.message}`); }
-    });
+    }, async ({ session_id, prompt }) => text(await resumePast(session_id, prompt)));
 
     // "Start it in my sds folder" — the caller (Friday) runs elsewhere (a microVM on hosted),
     // so only THIS host can say which folders exist here. Searches folder NAMES under the
@@ -570,9 +574,9 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
 
     server.registerTool('send_to_session', {
       title: 'Send input to a running Deep Session',
-      description: "Type a line into an already-running Deep Session (a live nudge, submitted with Enter). The Deep Session must be active — resume it in Polymux first if not. If it's showing a question picker, the picker is closed and the text is delivered as the answer, so put every answer in the text. A permission dialog is never answered: nothing is sent and its options come back.",
+      description: "Type a line into a Deep Session (a live nudge, submitted with Enter). One that isn't running (closed once its work was done) is resumed with its full conversation and the line typed in, so a follow-up never needs a new session. If it's showing a question picker, the picker is closed and the text is delivered as the answer, so put every answer in the text. A permission dialog is never answered: nothing is sent and its options come back.",
       inputSchema: {
-        session_id: z.string().describe("A Claude session id OR the Deep Session's title (as shown in Polymux) — the Deep Session must be live."),
+        session_id: z.string().describe("A Claude session id OR the Deep Session's title (as shown in Polymux)."),
         text: z.string().min(1).describe('The text to send; it is submitted with Enter.'),
       },
     }, async ({ session_id, text: line }) => {
@@ -581,7 +585,9 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
       const s = isSessionId(val)
         ? sessions.find((x) => x.liveSessionId === val || x.resumedFrom === val)
         : pickByTitle(sessions, (x) => x.title, val);
-      if (!s) return text(`ERROR: no live Deep Session matches "${session_id}". Live now: ${liveHint(sessions)}. Pass one of those ids or an exact title (resume a past Deep Session in Polymux first if it isn't listed).`);
+      // Not running: a past one (the deck closes Friday's once done) resumes with the line as its prompt.
+      if (!s && await resolveTranscriptId(val)) return text(await resumePast(val, line, 'proactive'));
+      if (!s) return text(`ERROR: no Deep Session matches "${session_id}". Live now: ${liveHint(sessions)}. Pass one of those ids or an exact title.`);
       // Only the instruction was delivered — callers narrated "Sent to X" as the task being done.
       const who = `"${s.title || s.name}"`;
       try {

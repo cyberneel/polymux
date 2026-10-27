@@ -3,12 +3,13 @@
 // idle is closed to make room: its conversation stays in History and resumes in full. If
 // none can go, Friday's start waits in a queue under a reserved name and launches when a
 // slot opens. A person starting one from the dashboard gets the "deck is full" error instead.
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, open } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { config } from './config.js';
 import { listSessions, killSession, createSession, newSessionName } from './tmux.js';
 import { getAgents, matchAgents } from './agents.js';
+import { findTranscriptFile } from './graph.js';
 
 const FILE = process.env.POLYMUX_QUEUE_FILE || join(homedir(), '.claude', 'cc-deck', 'queue.json');
 const MAX_QUEUE = 10;
@@ -40,6 +41,62 @@ async function observe() {
   for (const n of [...idleSince.keys()]) if (!sessions.some((s) => s.name === n)) idleSince.delete(n);
   return sessions;
 }
+
+// Friday's sessions close once their work is done, so they don't pile up on the deck: idle
+// 30 minutes after a final FRIDAY_STATUS done, 12 hours after anything else (one that asked
+// a question stays up that long). Friday relays a reply within a minute, so it has read it.
+// Closing is cheap: History keeps the conversation and a send to it resumes it in full
+// (send_to_session), so a follow-up never starts over. Each time one comes back after
+// closing it waits twice as long, so a thread still in use doesn't flap open and shut.
+const DONE_MS = 30 * 60_000, LEFT_MS = 12 * 3600_000;
+const closed = new Map(); // transcript id -> times closed. ponytail: in memory, a restart forgets the backoff
+
+export function reapable(s, idleFor, done, closes = 0) {
+  return s.origin === 'proactive' && !s.attached && (!s.kind || s.kind === 'claude')
+    && idleFor >= (done ? DONE_MS : LEFT_MS) * 2 ** closes;
+}
+
+// Its final words carry FRIDAY_STATUS done (the hive brief asks for it) and need nobody.
+export function saysDone(text) {
+  const i = text.lastIndexOf('FRIDAY_STATUS:');
+  const r = i < 0 ? '' : text.slice(i).split('\n')[0];
+  return /"status"\s*:\s*"done"/.test(r) && !/"needs_user"\s*:\s*true/.test(r);
+}
+
+// The last thing the session said, from the transcript's tail (the end is all that matters).
+export async function lastSaid(id, dir) {
+  const file = id && await findTranscriptFile(id, dir);
+  if (!file) return '';
+  const fh = await open(file);
+  try {
+    const { size } = await fh.stat();
+    const len = Math.min(size, 256 << 10), buf = Buffer.alloc(len);
+    await fh.read(buf, 0, len, size - len);
+    for (const l of buf.toString('utf8').split('\n').reverse()) {
+      let o; try { o = JSON.parse(l); } catch { continue; }
+      if (o.type !== 'assistant' || !Array.isArray(o.message?.content)) continue;
+      const t = o.message.content.filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+      if (t) return t;
+    }
+  } finally { await fh.close(); }
+  return '';
+}
+
+async function reap() {
+  const now = Date.now();
+  for (const s of await observe()) {
+    if (!idleSince.has(s.name)) continue;
+    const id = s.liveSessionId || s.resumedFrom, n = closed.get(s.resumedFrom) || 0, idleFor = now - idleSince.get(s.name);
+    if (!reapable(s, idleFor, true, n)) continue;
+    if (!reapable(s, idleFor, false, n) && !saysDone(await lastSaid(id, s.dir).catch(() => ''))) continue;
+    await killSession(s.name).catch(() => {});
+    idleSince.delete(s.name);
+    if (id) closed.set(id, n + 1);
+    console.log(`[polymux] closed "${s.title}" (${s.name}), its work done; it stays in History`);
+  }
+}
+
+export function startReaper() { setInterval(() => reap().catch(() => {}), 60_000); }
 
 // createSession calls this before it launches anything.
 // ponytail: no lock, so two starts in the same instant can both pass and overshoot the cap
