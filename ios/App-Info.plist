@@ -4,6 +4,8 @@
 <dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo to attach to a prompt.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>

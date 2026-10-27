@@ -196,7 +196,7 @@ public struct Server: Sendable {
         _ = try await call(path, method: "POST", json: ["text": text])
     }
 
-    // Puts files in dir (renamed when the name is taken) → the names they were saved under.
+    // Puts files in dir's .polymux/uploads (git ignores it; a taken name is kept, renamed) → their full paths.
     public func upload(_ files: [URL], to dir: String) async throws -> [String] {
         let boundary = "polymux-" + UUID().uuidString
         var body = Data()
@@ -208,9 +208,10 @@ public struct Server: Sendable {
         }
         body.append(Data("--\(boundary)--\r\n".utf8))
         let d = dir.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? dir   // a folder name may hold + & =
-        struct Saved: Decodable { let names: [String] }
-        let data = try await call("/api/upload?mode=rename&dir=" + d, method: "POST", body: body, type: "multipart/form-data; boundary=\(boundary)")
-        return try JSONDecoder().decode(Saved.self, from: data).names
+        struct Saved: Decodable { let dir: String; let names: [String] }
+        let data = try await call("/api/upload?attach=1&dir=" + d, method: "POST", body: body, type: "multipart/form-data; boundary=\(boundary)")
+        let saved = try JSONDecoder().decode(Saved.self, from: data)
+        return saved.names.map { saved.dir + "/" + $0 }
     }
 
     // This phone's APNs token, so the server can push when a session needs you.

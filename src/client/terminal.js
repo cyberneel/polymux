@@ -436,6 +436,7 @@ const KEYS = [
   { label: 'Dictate', dictate: true, title: 'Dictate or type a message, then send' },
   { label: 'Copy', copy: true, title: 'Copy on-screen text' },
   { label: 'Paste', paste: true, title: 'Paste from clipboard' },
+  { label: 'Attach', attach: true, title: 'Attach a photo or file to your next prompt' },
 ];
 
 // Copy the terminal's on-screen text out — xterm is a canvas so there's no native
@@ -554,6 +555,8 @@ keybar.querySelectorAll('button').forEach((btn) => {
     for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(ev, stop);
     return;
   }
+  // A file picker opens only from a click (a touch pointerdown isn't a user activation).
+  if (k.attach) { btn.addEventListener('click', attachToPrompt); return; }
   // Use pointerdown + preventDefault so tapping a key doesn't steal focus/raise-dismiss the keyboard.
   btn.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -573,6 +576,33 @@ async function loadBurn() { burn = await fetchBurn(); renderBurnPill(burnBtn, bu
 burnBtn.addEventListener('click', (e) => { e.stopPropagation(); openBurnPopover(burnBtn, burn, loadBurn); });
 loadBurn();
 setInterval(loadBurn, 60_000);
+
+// ---- attach a photo or file to the next prompt ----
+// Uploads to the session's .polymux/uploads (git ignores it) and types the path(s) into the
+// prompt without Enter, so you write the rest ("what's wrong in this screenshot?"). Claude Code
+// turns a pasted image path into an attached image.
+function attachToPrompt() {
+  const name = currentSession;
+  pickFiles(false, async (files) => {
+    // iOS names every picked photo image.jpeg: a stamp keeps names unique and space-free (the
+    // server's rename would add " (1)"), so the pasted path stays one word.
+    const stamp = Date.now().toString(36);
+    const form = new FormData();
+    files.forEach((f, i) => form.append(`f:${stamp}-${i}-${f.name.replace(/[\s'"\\]+/g, '-')}`, f, f.name));
+    toast(`Attaching ${files.length} file${files.length === 1 ? '' : 's'}…`, { ms: 600e3 });
+    try {
+      const r = await fetch(`/api/upload?session=${encodeURIComponent(name)}&attach=1`, { method: 'POST', body: form });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      const paths = j.names.map((n) => { const p = `${j.dir}/${n}`; return /[\s"]/.test(p) ? `'${p}'` : p; }).join(' ');
+      const ws = panes.get(name)?.ws;
+      if (ws?.readyState !== WebSocket.OPEN) throw new Error(`saved, but the session isn't connected. Paste ${paths}`);
+      ws.send(`\x1b[200~${paths} \x1b[201~`);
+      toast('Attached. Type your prompt.', { kind: 'ok' });
+      panes.get(name)?.term.focus();
+    } catch (e) { toast('Attach failed: ' + e.message, { kind: 'error' }); }
+  });
+}
 
 // ---- send files / folder to the session ----
 function pickAndUpload(folder) {
@@ -652,12 +682,15 @@ document.getElementById('upload-btn').addEventListener('click', (e) => {
   m.id = 'upload-menu';
   m.className = 'upload-menu';
   const desktop = !matchMedia('(max-width: 700px)').matches; // iOS can't pick folders
-  m.innerHTML = `<button data-folder="0">Files…</button>${desktop ? '<button data-folder="1">Folder…</button>' : ''}`;
+  m.innerHTML = `<button data-attach="1" title="Upload it and put its path in your next prompt">Attach to prompt…</button><button data-folder="0">Files…</button>${desktop ? '<button data-folder="1">Folder…</button>' : ''}`;
   const r = e.currentTarget.getBoundingClientRect();
   m.style.top = `${r.bottom + 4}px`;
   m.style.right = `${Math.max(8, window.innerWidth - r.right)}px`;
   document.body.appendChild(m);
-  m.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { m.remove(); pickAndUpload(b.dataset.folder === '1'); }));
+  m.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    m.remove();
+    if (b.dataset.attach) attachToPrompt(); else pickAndUpload(b.dataset.folder === '1');
+  }));
   setTimeout(() => document.addEventListener('click', function h() { m.remove(); document.removeEventListener('click', h); }, { once: true }), 0);
 });
 

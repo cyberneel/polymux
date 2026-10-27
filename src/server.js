@@ -545,8 +545,16 @@ app.post('/api/upload', async (req, reply) => {
     // Prefer an explicit (validated) destination dir; fall back to the session cwd.
     baseDir = req.query.dir ? await resolveAllowedDir(req.query.dir) : await sessionDir(req.query.session);
   } catch (err) { return reply.code(err.statusCode || 400).send({ error: err.message }); }
+  // attach=1: files for a prompt go in .polymux/uploads, a folder git ignores (its .gitignore is
+  // "*"), so a photo shared to a session never lands in a commit. Same-named files are kept.
+  if (req.query.attach === '1') {
+    const top = join(baseDir, '.polymux');
+    await mkdir(top, { recursive: true });
+    await writeFile(join(top, '.gitignore'), '*\n', { flag: 'wx' }).catch(() => {});
+    baseDir = join(top, 'uploads');
+  }
   // On a name conflict: 'skip' (default), 'overwrite', or 'rename' (keep both).
-  const mode = req.query.mode || (req.query.overwrite === '1' ? 'overwrite' : 'skip');
+  const mode = req.query.attach === '1' ? 'rename' : req.query.mode || (req.query.overwrite === '1' ? 'overwrite' : 'skip');
   const names = [];
   const skipped = [];
   try {

@@ -76,7 +76,9 @@ browser (xterm.js)  ──ws──▶  Node/Fastify  ──node-pty──▶  tm
   resumed lineages are readable. Transcripts are parsed off the main thread, so even a
   multi-hundred-MB session doesn't stall the dashboard.
 - **Files & uploads** — browse/download/delete files under your roots, and drag-drop files or
-  whole folders straight into a session's working directory.
+  whole folders straight into a session's working directory. **Attach** (key bar, or Upload →
+  Attach to prompt) uploads a photo or file to the session's git-ignored `.polymux/uploads` and
+  types its path into your next prompt; an image path becomes an attached image.
 - **Remote sessions (over SSH)** — list and attach **tmux sessions on other tailnet hosts**
   (a laptop, another box) right in the terminal sidebar, tagged by host. Attach-only for now
   (no rename/kill/notes). See [Remote sessions](#remote-sessions-on-other-hosts).

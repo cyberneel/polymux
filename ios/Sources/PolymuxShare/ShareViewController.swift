@@ -116,8 +116,8 @@ struct ShareView: View {
             var parts = [note.trimmingCharacters(in: .whitespacesAndNewlines)] + texts
             if !files.isEmpty {
                 guard let dir = target.dir else { throw ServerError(message: "That session has no folder to put the files in.") }
-                let names = try await s.upload(files, to: dir)
-                parts.append("Shared file\(names.count == 1 ? "" : "s") (in \(dir)): " + names.joined(separator: ", "))
+                let paths = try await s.upload(files, to: dir)
+                parts.append("Shared file\(paths.count == 1 ? "" : "s"): " + paths.joined(separator: " "))
             }
             let message = parts.filter { !$0.isEmpty }.joined(separator: "\n\n")
             switch target {
