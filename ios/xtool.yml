@@ -1,0 +1,6 @@
+version: 1
+bundleID: com.cyberneel.polymux
+displayName: Polymux
+iconPath: Icon.png
+product: Polymux
+infoPath: App-Info.plist
