@@ -126,6 +126,13 @@ export const config = {
     url: process.env.POLYMUX_FRIDAY_REACH_URL || '',
     password: process.env.POLYMUX_FRIDAY_REACH_PASSWORD || '',
   },
+  // Push to the Polymux iOS app when a Deep Session needs you (src/apns.js). OPT-IN: inert unless
+  // all three are set. key = path to an APNs auth key (.p8) of the team that signs the app.
+  apns: {
+    keyId: (process.env.POLYMUX_APNS_KEY_ID || '').trim(),
+    key: (process.env.POLYMUX_APNS_KEY || '').trim(),
+    teamId: (process.env.POLYMUX_APNS_TEAM_ID || '').trim(),
+  },
   // Per-turn RAM/CPU → the systems fleet telemetry ingest (hosted tier sizing). OPT-IN: inert
   // unless url + token are set (systems seeds both at provision; the tenant is POLYMUX_TENANT_ID).
   telemetry: {

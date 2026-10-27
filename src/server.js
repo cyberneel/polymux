@@ -23,9 +23,11 @@ import {
   sessionDir,
   resolveAllowedDir,
   sendText,
+  relayText,
   openMenu,
   waitState,
 } from './tmux.js';
+import { registerDevice, apnsEnabled } from './apns.js';
 import { attachHandler } from './pty.js';
 import { initServer } from './tmux.js';
 import { getAgents, matchAgents } from './agents.js';
@@ -300,8 +302,9 @@ app.get('/api/remote/sessions', async () => {
   return { hosts: config.remoteHosts.map((h) => h.label), sessions: await listRemoteSessions() };
 });
 
+// prompt: typed into the CLI once it boots (the iOS app's Siri and share sheet start work this way).
 app.post('/api/sessions', async (req, reply) => {
-  const { dir, title, resume, fork, browser, kind } = req.body || {};
+  const { dir, title, resume, fork, browser, kind, prompt } = req.body || {};
   if (!dir) return reply.code(400).send({ error: 'dir is required' });
   try {
     // Don't launch a duplicate: if the session being resumed is already running,
@@ -316,7 +319,8 @@ app.post('/api/sessions', async (req, reply) => {
     }
     // Resuming a session? Seed it with any external notes saved from outside chats
     // so it picks up what happened elsewhere (consumed so it won't re-inject).
-    const seed = resume && !fork ? await consumeNotesSeed(resume) : undefined;
+    const notes = resume && !fork ? await consumeNotesSeed(resume) : undefined;
+    const seed = [notes, typeof prompt === 'string' ? prompt.trim() : ''].filter(Boolean).join('\n\n') || undefined;
     const name = await createSession({ dir, title, resume, fork, seed, browser, kind });
     return { name };
   } catch (err) {
@@ -413,6 +417,32 @@ app.post('/api/sessions/:name/apply-notes', async (req, reply) => {
     if (!seed) return { applied: 0 };
     await sendText(req.params.name, seed);
     return { applied: 1 };
+  } catch (err) {
+    return reply.code(err.statusCode || 500).send({ error: err.message });
+  }
+});
+
+// Type a line into a running session (the iOS share sheet), as MCP send_to_session: a question
+// picker is closed and the text answers it; a permission dialog is never answered (409).
+app.post('/api/sessions/:name/send', async (req, reply) => {
+  const text = (req.body?.text ?? '').toString().trim();
+  if (!text) return reply.code(400).send({ error: 'Nothing to send.' });
+  try {
+    const s = (await enrichedSessions()).find((x) => x.name === req.params.name);
+    if (!s) return reply.code(410).send({ error: 'That Deep Session has ended.' });
+    const r = await relayText(s.name, text, waitState(s));
+    if (r.opts) return reply.code(409).send({ error: 'It is waiting on a choice. Answer it in Polymux first; nothing was sent.' });
+    return { ok: true };
+  } catch (err) {
+    return reply.code(err.statusCode || 500).send({ error: err.message });
+  }
+});
+
+// The iOS app's device token for push (stored either way; pushes go out only with POLYMUX_APNS_*).
+app.post('/api/push/apns', async (req, reply) => {
+  try {
+    await registerDevice(req.body || {});
+    return { ok: true, enabled: apnsEnabled() };
   } catch (err) {
     return reply.code(err.statusCode || 500).send({ error: err.message });
   }

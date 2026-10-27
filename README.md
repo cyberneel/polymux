@@ -264,6 +264,7 @@ for the full annotated list.
 | `POLYMUX_BROWSER_CDP` | `http://127.0.0.1:9222` | CDP endpoint of that shared browser. |
 | `POLYMUX_FRIDAY_REACH_URL` | — | Optional webhook to push a session's "needs input" transition to instantly (see [Instant push](#instant-push-optional)). Empty = standalone. |
 | `POLYMUX_FRIDAY_REACH_PASSWORD` | — | App password sent as `X-App-Password` with the push. |
+| `POLYMUX_APNS_KEY` / `_KEY_ID` / `_TEAM_ID` | — | Apple Push key (.p8 path), its key ID and team ID: the iOS app gets a notification when a session needs you. Unset = off. |
 | `POLYMUX_TMUX_SOCKET` | `ccdeck` | Dedicated tmux `-L` socket name. |
 | `POLYMUX_MCP_TOKEN` | — | Static bearer for the MCP endpoint. Empty = the bearer path is off (OAuth connectors still work). Unlocks the session-control tools (create / resume / drive sessions, read their files). |
 | `POLYMUX_MCP_TOKEN_READONLY` | — | Read-only MCP bearer (search + leave-note only). Used to auto-wire sessions. |
@@ -361,6 +362,11 @@ with an `X-App-Password` header. Only that one transition is pushed (everything 
 polling), and it's best-effort: if the webhook is down the event is dropped and the poll is the
 backstop. Built for [Friday](https://github.com/cyberneel/friday)'s Reach Manager, but it's just a
 webhook — empty url = disabled (Polymux runs fully standalone).
+
+The Polymux iOS app (`ios/`) can get the same transition as a notification: set `POLYMUX_APNS_KEY`
+(path to an Apple Push `.p8`), `POLYMUX_APNS_KEY_ID` and `POLYMUX_APNS_TEAM_ID`. The app registers
+its device token on sign-in (`POST /api/push/apns`); the notification carries the session's title
+and what it's waiting for (never terminal output), and tapping it opens that session.
 
 <a id="multiple-clis"></a>
 ## Multiple CLIs (Claude, Codex, agy)
@@ -530,7 +536,8 @@ src/burn.js        shells out to `ccburn --json` for live plan-limit utilization
 src/restore.js     snapshot active sessions + restore them after a host reboot
 src/remote.js      list + attach tmux sessions on other hosts over SSH (POLYMUX_REMOTE_HOSTS)
 src/browser.js     shared-browser lock registry (browser_tabs/claim/release over CDP)
-src/reach-emit.js  optional: push "needs input" transitions to a webhook (POLYMUX_FRIDAY_REACH_URL)
+src/reach-emit.js  optional: push "needs input" transitions to a webhook (POLYMUX_FRIDAY_REACH_URL) and the iOS app
+src/apns.js        optional: APNs device registry + token-auth push to the iOS app (POLYMUX_APNS_*)
 src/origin.js      tags sessions an agent launched over MCP, so they stay out of search/history
 src/turn-telemetry.js  hosted tier: per-turn RAM/CPU via CLI hooks (inert unless configured)
 src/sw.js          service-worker source (built to public/sw.js by esbuild)

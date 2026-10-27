@@ -10,8 +10,13 @@ let package = Package(
     ],
     products: [
         .library(name: "Polymux", targets: ["Polymux"]),
+        .library(name: "PolymuxWidget", targets: ["PolymuxWidget"]),
+        .library(name: "PolymuxShare", targets: ["PolymuxShare"]),
     ],
     targets: [
-        .target(name: "Polymux", resources: [.copy("Fonts")]),
+        .target(name: "Polymux", dependencies: ["PolymuxShared"], resources: [.copy("Fonts")]),
+        .target(name: "PolymuxWidget", dependencies: ["PolymuxShared"]),
+        .target(name: "PolymuxShare", dependencies: ["PolymuxShared"]),
+        .target(name: "PolymuxShared"),
     ]
 )

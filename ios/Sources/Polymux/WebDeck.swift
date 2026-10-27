@@ -1,16 +1,17 @@
 import SwiftUI
 import WebKit
+import PolymuxShared
 
 // The app is the server's own web app (Active, History, Usage and Files tabs, the terminal, all of
 // it) in one web view, so every web change lands here for free. Native: sign-in, the Keychain, the
-// Access token, the badge. ponytail: a native screen replaces a web page only where the web falls short.
+// Access token, the badge, and the links from widgets, notifications and quick actions. ponytail: a native screen replaces a web page only where the web falls short.
 struct DeckView: View {
     @Environment(Deck.self) private var deck
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
         if let creds = deck.creds {
-            WebDeck(creds: creds, deck: deck)
+            WebDeck(creds: creds, deck: deck, destination: deck.destination)
                 .ignoresSafeArea()   // like the home-screen web app: the pages pad with env(safe-area-inset-*)
                 .background(Color.paper)
                 .task(id: phase) {
@@ -28,6 +29,7 @@ struct DeckView: View {
 struct WebDeck: UIViewRepresentable {
     let creds: Credentials
     let deck: Deck
+    let destination: Destination?   // where a link asked to go
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -45,6 +47,18 @@ struct WebDeck: UIViewRepresentable {
             \(UIDevice.current.userInterfaceIdiom == .pad ? "document.documentElement.classList.add('ipad-app');" : "")
             """
         cfg.userContentController.addUserScript(WKUserScript(source: glue, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // polymux://new lands on /?polymux-new: open the New Deep Session dialog once the dashboard draws its button.
+        let new = """
+            if (new URLSearchParams(location.search).has('polymux-new')) {
+              history.replaceState(null, '', '/');
+              let tries = 0;
+              const t = setInterval(() => {
+                const b = document.getElementById('new-btn');
+                if (b || ++tries > 50) { clearInterval(t); b?.click(); }
+              }, 100);
+            }
+            """
+        cfg.userContentController.addUserScript(WKUserScript(source: new, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         cfg.userContentController.add(co, name: "polymux")
         let wv = WKWebView(frame: .zero, configuration: cfg)
         wv.navigationDelegate = co
@@ -53,14 +67,23 @@ struct WebDeck: UIViewRepresentable {
         wv.isOpaque = false
         wv.backgroundColor = .clear
         wv.scrollView.contentInsetAdjustmentBehavior = .never
-        co.open(nil, in: wv)
+        co.shown = destination?.id
+        co.open(destination.flatMap { creds.url($0.path) }, in: wv)
         return wv
     }
 
-    func updateUIView(_ wv: WKWebView, context: Context) { context.coordinator.parent = self }
+    func updateUIView(_ wv: WKWebView, context: Context) {
+        let co = context.coordinator
+        co.parent = self
+        if let d = destination, d.id != co.shown {
+            co.shown = d.id
+            co.open(creds.url(d.path), in: wv)
+        }
+    }
 
     @MainActor final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, WKDownloadDelegate {
         var parent: WebDeck
+        var shown: UUID?   // the last Destination loaded
         private var lastSignIn = Date.distantPast
         private var saved: [ObjectIdentifier: URL] = [:]
         init(_ p: WebDeck) { parent = p }

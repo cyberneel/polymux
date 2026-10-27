@@ -4,3 +4,12 @@ displayName: Polymux
 iconPath: Icon.png
 product: Polymux
 infoPath: App-Info.plist
+extensions:
+  - product: PolymuxWidget
+    bundleID: com.cyberneel.polymux.Widget
+    infoPath: Widget-Info.plist
+  - product: PolymuxShare
+    bundleID: com.cyberneel.polymux.Share
+    infoPath: Share-Info.plist
+# xtool's infoPlist merge drops arrays-of-dicts, so the quick actions, the polymux:// scheme and
+# background pushes live in ios-ota.infoplist.json, which ios-ota re-merges before signing.

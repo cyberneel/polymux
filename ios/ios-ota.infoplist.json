@@ -1,0 +1,21 @@
+{
+  "CFBundleURLTypes": [
+    {
+      "CFBundleURLName": "com.cyberneel.polymux",
+      "CFBundleURLSchemes": ["polymux"]
+    }
+  ],
+  "UIApplicationShortcutItems": [
+    {
+      "UIApplicationShortcutItemType": "new",
+      "UIApplicationShortcutItemTitle": "New session",
+      "UIApplicationShortcutItemIconType": "UIApplicationShortcutIconTypeAdd"
+    },
+    {
+      "UIApplicationShortcutItemType": "needs",
+      "UIApplicationShortcutItemTitle": "Needs you",
+      "UIApplicationShortcutItemIconType": "UIApplicationShortcutIconTypeAlarm"
+    }
+  ],
+  "UIBackgroundModes": ["remote-notification"]
+}

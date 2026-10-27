@@ -1,14 +1,17 @@
 // Push Polymux session-state transitions to Friday's Reach Manager (POST /api/reach) the
 // INSTANT they happen — so Friday reacts immediately instead of polling Polymux every 60s.
-// Opt-in: only runs when POLYMUX_FRIDAY_REACH_URL is set; standalone Polymux is unaffected.
+// The same transitions drive the iOS app's push (src/apns.js).
+// Opt-in: only runs when POLYMUX_FRIDAY_REACH_URL or POLYMUX_APNS_* is set; standalone Polymux is unaffected.
 // Best-effort: if Friday is unreachable we drop the event (Friday's poll is the backstop).
 
 import { config } from './config.js';
 import { listSessions, capturePane, promptText } from './tmux.js';
 import { getAgents, matchAgents, deckStatus } from './agents.js';
+import { apnsEnabled, pushAll } from './apns.js';
 
 const last = new Map(); // session name -> last status
 let primed = false; // first pass only records the baseline (no startup burst)
+let lastWaiting = 0; // how many sessions needed you last tick (the iOS app's badge)
 
 // What a transition (from -> to) should tell Friday, or null to stay quiet.
 // Push ONLY "needs your input" — the time-sensitive case where instant beats Friday's 60s
@@ -69,27 +72,50 @@ async function tick() {
     return; // couldn't read sessions this round; try again next tick
   }
   const seen = new Set();
+  const asking = []; // sessions that just started needing you
+  let waiting = 0;
   for (const s of sessions) {
     seen.add(s.name);
     const to = deckStatus(s);
     const from = last.get(s.name);
     last.set(s.name, to);
+    if (to === 'waiting_input') waiting++;
     // Skip the first observation of a session (from===undefined) and no-change ticks;
     // only push real transitions once primed.
     if (!primed || from === undefined || from === to) continue;
-    const ev = eventFor(s, from, to);
+    if (to === 'waiting_input') asking.push(s);
+    const ev = config.fridayReach.url && eventFor(s, from, to);
     // The dialog itself (command, question, options), so it's answerable from Friday unseen.
     if (ev && to === 'waiting_input') ev.detail = promptText(await capturePane(s.name, 0).catch(() => '')) || ev.detail;
     if (ev) post(ev);
   }
   // Forget sessions that vanished so a reused name re-primes cleanly.
   for (const name of [...last.keys()]) if (!seen.has(name)) last.delete(name);
+  if (primed && apnsEnabled()) pushToPhone(asking, waiting);
+  lastWaiting = waiting;
   primed = true;
 }
 
-// Start the transition monitor (no-op unless a Friday reach url is configured).
+// The iOS app: a notification per session that started needing you (tapping it opens that
+// session), else a quiet badge update when the count changed (you answered one elsewhere).
+// Only the short waitingFor goes through Apple, never the screen (it can hold secrets).
+// content-available wakes the app to refresh its widgets.
+function pushToPhone(asking, waiting) {
+  for (const s of asking) {
+    pushAll(
+      { alert: { title: `“${s.title || s.name}” needs you`, body: (s.waitingFor || 'Waiting for your input.').slice(0, 200) },
+        badge: waiting, sound: 'default', 'content-available': 1 },
+      { session: s.name },
+      { 'apns-collapse-id': s.name.slice(0, 64) },
+    );
+  }
+  if (!asking.length && waiting !== lastWaiting) pushAll({ badge: waiting, 'content-available': 1 }, {}, { 'apns-priority': '5' });
+}
+
+// Start the transition monitor (no-op unless Friday reach or iOS push is configured).
 export function startReachMonitor() {
-  if (!config.fridayReach.url) return;
-  console.log('[polymux] Friday reach: pushing session transitions to', config.fridayReach.url);
+  if (!config.fridayReach.url && !apnsEnabled()) return;
+  if (config.fridayReach.url) console.log('[polymux] Friday reach: pushing session transitions to', config.fridayReach.url);
+  if (apnsEnabled()) console.log('[polymux] iOS push: on (APNs key', config.apns.keyId + ')');
   setInterval(() => { tick().catch(() => {}); }, 7000);
 }

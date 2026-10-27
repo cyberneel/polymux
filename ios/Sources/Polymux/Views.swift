@@ -1,4 +1,5 @@
 import SwiftUI
+import PolymuxShared
 
 // Sign in: server address + password, and a Cloudflare Access service token when the server sits
 // behind Access. Any Polymux server works (self-hosted or a hosted tenant).
