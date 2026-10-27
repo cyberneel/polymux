@@ -30,7 +30,7 @@ struct ConnectView: View {
                     Button("Add a Cloudflare Access service token") { showAccess = true }
                         .font(.sans(.footnote)).foregroundStyle(Color.ink).underline()
                 }
-                if let problem {
+                if let problem = problem ?? deck.signedOutBecause {
                     Text(problem).font(.sans(.footnote)).foregroundStyle(Color.redPencil).accessibilityAddTraits(.updatesFrequently)
                 }
                 Button(busy ? "Connecting…" : "Connect", action: go)
@@ -57,91 +57,12 @@ struct ConnectView: View {
         guard let base = serverAddress(address) else { problem = "That isn't a server address."; return }
         busy = true
         problem = nil
+        deck.signedOutBecause = nil
         let c = Credentials(baseURL: base, password: password,
                             cfClientId: cfId.trimmingCharacters(in: .whitespaces), cfClientSecret: cfSecret.trimmingCharacters(in: .whitespaces))
         Task {
             problem = await deck.connect(c)
             busy = false
-        }
-    }
-}
-
-// The Deep Sessions list beside (iPad) or above (iPhone) the open terminal. Polls every 4s while
-// the app is in front; the app icon badge carries the needs-you count.
-struct SessionsView: View {
-    @Environment(Deck.self) private var deck
-    @Environment(\.scenePhase) private var phase
-
-    var body: some View {
-        @Bindable var deck = deck
-        NavigationSplitView {
-            List(selection: $deck.selection) {
-                if let p = deck.problem {
-                    Text(p).font(.sans(.footnote)).foregroundStyle(Color.redPencil).listRowBackground(Color.paper)
-                }
-                ForEach(deck.sessions) { s in
-                    SessionRow(s: s).tag(s.name).listRowBackground(deck.selection == s.name ? Color.sheet : Color.paper)
-                }
-                if deck.loaded && deck.sessions.isEmpty && deck.problem == nil {
-                    Text("No Deep Sessions running.").foregroundStyle(Color.inkDim).listRowBackground(Color.paper)
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(Color.paper)
-            .refreshable { await deck.refresh() }
-            .overlay { if !deck.loaded { ProgressView() } }
-            .navigationTitle("Deep Sessions")
-            .toolbar {
-                Menu {
-                    Button("Sign out", role: .destructive) { deck.signOut() }
-                } label: { Image(systemName: "ellipsis").accessibilityLabel("More") }
-            }
-        } detail: {
-            if let name = deck.selection {
-                TerminalView(name: name)
-            } else {
-                Text("Pick a Deep Session.").foregroundStyle(Color.inkDim)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.paper)
-            }
-        }
-        .task(id: phase) {
-            guard phase == .active else { return }
-            while !Task.isCancelled {
-                await deck.refresh()
-                try? await Task.sleep(for: .seconds(4))
-            }
-        }
-    }
-}
-
-struct SessionRow: View {
-    let s: Session
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(s.displayTitle).font(.sans(.body).weight(s.needsYou ? .semibold : .medium)).lineLimit(1)
-                Spacer(minLength: 8)
-                if let t = s.lastActive {
-                    Text(t.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))
-                        .font(.mono(.caption2)).foregroundStyle(Color.inkDim).lineLimit(1)
-                }
-            }
-            HStack(spacing: 10) {
-                status
-                Text(s.shortDir).font(.sans(.footnote)).foregroundStyle(Color.inkDim).lineLimit(1).truncationMode(.head)
-            }
-        }
-        .padding(.vertical, 6)
-    }
-
-    @ViewBuilder private var status: some View {
-        switch s.status {
-        case .needs(let label): StatusDot(label: label, color: .redPencil, text: .redPencil)
-        case .working: StatusDot(label: "working", color: .ink, pulse: true)
-        case .ready: StatusDot(label: "ready", color: .ink)
-        case .running: StatusDot(label: "running", color: .ink, pulse: true)
-        case .stopped: StatusDot(label: "stopped", color: .inkDim, text: .inkDim)
         }
     }
 }

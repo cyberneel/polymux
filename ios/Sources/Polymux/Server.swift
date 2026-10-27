@@ -65,32 +65,10 @@ func serverAddress(_ typed: String) -> String? {
     return t
 }
 
-// One Deep Session as GET /api/sessions lists it (the fields the list shows).
-struct Session: Decodable, Identifiable, Hashable, Sendable {
-    let name: String
-    let title: String?
-    let dir: String?
-    let paneCommand: String?
-    let claudeStatus: String?
+// One Deep Session as GET /api/sessions lists it; the badge only needs to know who's waiting on you.
+struct Session: Decodable, Sendable {
     let waitingFor: String?
-    let lastActivity: Double?
-    var id: String { name }
-
-    var displayTitle: String { title?.isEmpty == false ? title! : name }
     var needsYou: Bool { waitingFor?.isEmpty == false }
-    // The last two path parts, like the web sidebar.
-    var shortDir: String { (dir ?? "").split(separator: "/").suffix(2).joined(separator: "/") }
-    var lastActive: Date? { lastActivity.map { Date(timeIntervalSince1970: $0 / 1000) } }
-
-    // Mirrors statusOf() in src/client/dashboard.js.
-    enum Status { case needs(String), working, ready, running, stopped }
-    var status: Status {
-        if let w = waitingFor, !w.isEmpty { return .needs(w.localizedCaseInsensitiveContains("perm") ? "needs permission" : "needs you") }
-        if claudeStatus == "busy" { return .working }
-        if claudeStatus == "idle" { return .ready }
-        if paneCommand?.range(of: "node|claude", options: [.regularExpression, .caseInsensitive]) != nil { return .running }
-        return .stopped
-    }
 }
 
 struct ServerError: LocalizedError {
@@ -99,7 +77,7 @@ struct ServerError: LocalizedError {
 }
 
 // Polymux's API is cookie-authed: POST /api/login sets the session cookie, which URLSession.shared
-// keeps in HTTPCookieStorage.shared; the terminal web view gets a copy before it loads.
+// keeps in HTTPCookieStorage.shared; the web view gets a copy (Deck.syncCookies).
 struct Server: Sendable {
     let creds: Credentials
 
@@ -142,6 +120,9 @@ struct Server: Sendable {
         if http.statusCode == 401 { throw ServerError(message: "Wrong password.") }
         guard http.statusCode == 200 else { throw ServerError(message: "Polymux answered with an error (\(http.statusCode)). Try again in a minute.") }
     }
+
+    // Ends the session on the server. Fastify wants a body, even an empty one.
+    func logout() async { _ = try? await send("/api/logout", method: "POST", json: [:]) }
 
     // Signs in again once when the cookie has expired.
     func sessions() async throws -> [Session] {
