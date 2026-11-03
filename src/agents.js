@@ -121,6 +121,13 @@ export const getAgents = swr(async () => {
   return [];
 }, 2500, 10_000);
 
+// matchAgents with a fresh `claude agents`, only when a Claude session can use it: the exec
+// costs ~0.8 CPU-s, which on a run every 15s was a tenant VM's whole idle floor.
+export async function attachAgents(sessions) {
+  if (sessions.some((s) => !s.kind || s.kind === 'claude')) matchAgents(sessions, await getAgents());
+  return sessions;
+}
+
 // Attach each Polymux session's live Claude status by matching it to an agent.
 // Two passes so a directory-shared guess never overrides a confident match:
 //   1. by claude PID (the pane's child), the resumed id, or the job a parked pane

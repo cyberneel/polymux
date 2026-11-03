@@ -32,7 +32,10 @@ export function pickEvictable(sessions, idle, now, idleMs = config.slotIdleMs) {
 
 async function observe() {
   const sessions = await listSessions();
-  try { matchAgents(sessions, await getAgents()); } catch { /* status unknown → nothing looks idle */ }
+  // Only Friday's sessions are ever closed, so skip `claude agents` (~0.8 CPU-s a run, every 15s) when there are none.
+  if (sessions.some((s) => s.origin === 'proactive')) {
+    try { matchAgents(sessions, await getAgents()); } catch { /* status unknown → nothing looks idle */ }
+  }
   const now = Date.now();
   for (const s of sessions) {
     if (!isIdle(s)) idleSince.delete(s.name);

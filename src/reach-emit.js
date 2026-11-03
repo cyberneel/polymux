@@ -6,7 +6,7 @@
 
 import { config } from './config.js';
 import { listSessions, capturePane, promptText } from './tmux.js';
-import { getAgents, matchAgents, deckStatus } from './agents.js';
+import { attachAgents, deckStatus } from './agents.js';
 import { apnsEnabled, pushAll } from './apns.js';
 
 const last = new Map(); // session name -> last status
@@ -67,7 +67,7 @@ async function tick() {
   let sessions;
   try {
     sessions = await listSessions();
-    try { matchAgents(sessions, await getAgents()); } catch { /* status degrades, still usable */ }
+    try { await attachAgents(sessions); } catch { /* status degrades, still usable */ }
   } catch {
     return; // couldn't read sessions this round; try again next tick
   }

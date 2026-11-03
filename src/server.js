@@ -30,7 +30,7 @@ import {
 import { registerDevice, apnsEnabled } from './apns.js';
 import { attachHandler } from './pty.js';
 import { initServer } from './tmux.js';
-import { getAgents, matchAgents } from './agents.js';
+import { attachAgents } from './agents.js';
 import { listHistory, claudeLiveMeta } from './history.js';
 import { buildGraph, buildThread } from './graph.js';
 import { runHandoff } from './handoff.js';
@@ -54,7 +54,7 @@ import { onHook, hookKey, startTurnTelemetry } from './turn-telemetry.js';
 async function enrichedSessions() {
   const sessions = await listSessions();
   try {
-    matchAgents(sessions, await getAgents());
+    await attachAgents(sessions);
     const notes = await pendingCounts(); // external-note counts keyed by Claude id
     await Promise.all(sessions.map(async (s) => {
       if (!s.liveSessionId) return;

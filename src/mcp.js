@@ -16,7 +16,7 @@ import { addNote, pendingCounts, countNotes, readPending, readPendingMany, consu
 import { sendText, listSessions, capturePane, answerPrompt, relayText, openMenu, waitState } from './tmux.js';
 import { startOrQueue, queued } from './slots.js';
 import { PROVIDER_KINDS, DEFAULT_KIND, getProvider, providerAvailable } from './providers/index.js';
-import { getAgents, matchAgents, deckStatus } from './agents.js';
+import { attachAgents, deckStatus } from './agents.js';
 import { listTabs, claimTab, releaseTab } from './browser.js';
 import { proactiveSet } from './origin.js';
 
@@ -34,7 +34,7 @@ const FULL = (place) => `this deck is already running its limit of ${config.maxS
 // RUNNING sessions with live status attached (best-effort).
 async function liveSessions() {
   const sessions = await listSessions().catch(() => []);
-  try { matchAgents(sessions, await getAgents()); } catch { /* */ }
+  try { await attachAgents(sessions); } catch { /* */ }
   return sessions;
 }
 // Unique title match in `arr`, or null if zero / more than one.
@@ -431,7 +431,7 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
     inputSchema: {},
   }, async () => {
     const sessions = await listSessions();
-    try { matchAgents(sessions, await getAgents()); } catch { /* claude agents unavailable → status degrades to idle/done */ }
+    try { await attachAgents(sessions); } catch { /* claude agents unavailable → status degrades to idle/done */ }
     const notes = await pendingCounts().catch(() => new Map());
     const out = sessions.map((s) => {
       const status = deckStatus(s);

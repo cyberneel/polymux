@@ -6,7 +6,7 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { listSessions, createSession } from './tmux.js';
-import { getAgents, matchAgents, tail, turnEnded } from './agents.js';
+import { attachAgents, tail, turnEnded } from './agents.js';
 import { markProactive } from './origin.js';
 import { config } from './config.js';
 
@@ -31,7 +31,7 @@ export function cutOff(e) {
 // lost sessions across `sudo reboot`).
 export async function captureSnapshot({ skipIfEmpty = false } = {}) {
   const sessions = await listSessions();
-  try { matchAgents(sessions, await getAgents()); } catch { /* resume ids best-effort */ }
+  try { await attachAgents(sessions); } catch { /* resume ids best-effort */ }
   // Now that liveSessionIds are known, record proactive ones so search/history can
   // hide them (their sessionId is only knowable once the CLI has booted).
   await markProactive(
