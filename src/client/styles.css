@@ -370,7 +370,7 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--surface); bor
 .sb-share svg { display: block; }
 .sb-rename:hover, .sb-share:hover { color: var(--fg); }
 .sb-kill:hover { color: var(--red); }
-@media (max-width: 700px) {
+@media (max-width: 700px), (hover: none) {
   .sb-actions { opacity: 1; pointer-events: auto; background: linear-gradient(to right, transparent, var(--bg) 34%); }
 }
 .sb-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
@@ -466,6 +466,10 @@ body:has(#update-toast) #update-howto { bottom: 88px; } /* both update notices: 
 /* iPad home-screen app: clear the window controls in the top-left corner (class set in swreg.js). */
 .ipad-app { --wc-left: 84px; }
 .ipad-app .topbar, .ipad-app .sb-head, .ipad-app #app-term.collapsed .term-bar { padding-left: var(--wc-left); }
+/* and the status bar: the bars pad for it at every width, not only under 700px */
+.ipad-app .topbar { padding-top: max(16px, env(safe-area-inset-top)); }
+.ipad-app .term-bar { padding-top: max(8px, env(safe-area-inset-top)); height: auto; min-height: 44px; }
+.ipad-app #sidebar { padding-top: env(safe-area-inset-top); }
 
 /* ---- mobile on-screen key bar + drawer backdrop (hidden on desktop) ---- */
 #sb-backdrop { display: none; }
