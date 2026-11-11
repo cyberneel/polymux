@@ -7,9 +7,17 @@ import Security
 // Keychain string store for the server address and secrets. Pinned to a signing-stable access group
 // (ios-ota.entitlements.json) so a re-sign doesn't orphan them, as in friday/ios Keychain.swift.
 public enum Keychain {
-    private static let accessGroup = "FG6VJVSUSP.com.cyberneel.polymux"
+    // "<team>.com.cyberneel.polymux", written into each Info.plist at build time from ios-ota.xcconfig
+    // (DEVELOPMENT_TEAM in Local.xcconfig). Not filled in (no team set) → no group: the default one.
+    private static let accessGroup: String? = {
+        guard let g = Bundle.main.object(forInfoDictionaryKey: "PolymuxKeychainGroup") as? String,
+              !g.hasPrefix("."), !g.contains("$") else { return nil }
+        return g
+    }()
     private static func query(_ key: String) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: key, kSecAttrAccessGroup as String: accessGroup]
+        var q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: key]
+        if let accessGroup { q[kSecAttrAccessGroup as String] = accessGroup }
+        return q
     }
     public static func set(_ value: String, for key: String) {
         SecItemDelete(query(key) as CFDictionary)

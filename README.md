@@ -370,6 +370,24 @@ The Polymux iOS app (`ios/`) can get the same transition as a notification: set 
 its device token on sign-in (`POST /api/push/apns`); the notification carries the session's title
 and what it's waiting for (never terminal output), and tapping it opens that session.
 
+## iOS app
+
+`ios/` is a native client with a sessions list, a terminal, widgets and a share sheet. It builds
+and signs on Linux with [xtool](https://github.com/xtool-org/xtool) and `ios-ota` from
+[xtool-on-linux](https://github.com/cyberneel/xtool-on-linux), with no Mac needed. Set your Apple
+team once, then build:
+
+```bash
+cp ios/Local.xcconfig.example ios/Local.xcconfig   # set DEVELOPMENT_TEAM (git ignores this file)
+cd ios && ios-ota .
+```
+
+`ios/ios-ota.xcconfig` includes `Local.xcconfig` and makes the team the prefix of the Keychain
+group the app and its extensions share for your sign-in (`<team>.com.cyberneel.polymux`). `ios-ota`
+writes that group into each Info.plist at build time and takes the signed entitlement's prefix from
+your provisioning profile. Without a team, the build warns and the app falls back to its default
+Keychain group.
+
 <a id="multiple-clis"></a>
 ## Multiple CLIs (Claude, Codex, agy)
 
@@ -548,6 +566,7 @@ src/update.js      self-host update check (behind upstream? → dashboard "Updat
 src/config.js      env config
 src/client/*.js    dashboard + terminal + PWA (bundled by esbuild into public/)
 public/*.html      login / dashboard / terminal pages + manifest/icons
+ios/               native iOS app + widget + share extension (see iOS app)
 systemd/           user-service unit template (filled in by setup.sh)
 scripts/           snapshot CLI + screenshot generator
 test/              node:test suites (`npm test`)

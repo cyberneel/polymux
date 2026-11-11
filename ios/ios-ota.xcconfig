@@ -1,0 +1,8 @@
+// Build settings for the iOS app. ios-ota (github.com/cyberneel/xtool-on-linux) reads this file.
+// Your Apple team goes in Local.xcconfig, which git ignores: cp Local.xcconfig.example Local.xcconfig
+// DEVELOPMENT_TEAM is deliberately not set here, so a build without it warns instead of passing quietly.
+#include? "Local.xcconfig"
+
+// Prefix of the Keychain group the app and its extensions share (PolymuxKeychainGroup in each
+// Info.plist). In the signed entitlements, ios-ota takes $(AppIdentifierPrefix) from the profile.
+AppIdentifierPrefix = $(DEVELOPMENT_TEAM).
