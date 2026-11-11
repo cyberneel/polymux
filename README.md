@@ -404,6 +404,15 @@ auto-accepted on launch (see [POLYMUX_AUTO_TRUST](#configuration-env)).
 - **agy** (Antigravity, Gemini-backed) — resume via `--conversation <id>`, mode via `--mode
   accept-edits|plan`. The Polymux MCP is registered once at startup via `agy mcp add` (agy has no
   per-launch MCP flag).
+- **Publik** ([publikhq.com](https://publikhq.com), pay-as-you-go) — the normal `claude` CLI pointed
+  at Polymux's `/publik/<session>/` route, which holds your key and forwards to Publik's
+  Anthropic-compatible API. Shown only once `~/.publik/key` exists (put your key there, mode 600).
+  Pick a tier in New Session: **Balanced** (default), **Fast** or **Smart**. The CLI gets a
+  per-session token, never the key. Publik sessions are Claude sessions to Polymux (status dots,
+  History resume, notes), and the burn pill shows your Publik balance with a Top up link.
+  Known gaps: no prompt caching, the model calls itself Claude Sonnet, server-side tools
+  (WebSearch/WebFetch) may fail, no per-session spend yet (Publik reports the charge only on
+  non-streamed replies; the wallet total is exact), and a restored session comes back on Balanced.
 
 Codex and agy launch clean and get the **CLI-agnostic** surface: the in-browser terminal, attach,
 kill, rename (Polymux label), snapshot/restore, and remote — everything you'd drive by hand.

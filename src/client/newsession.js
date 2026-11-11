@@ -22,7 +22,8 @@ export function openNewModal({ api, cfg = {}, onCreated }) {
   };
   const cliField = providers.length > 1
     ? `<div class="field"><label for="cli-mode">CLI</label><select id="cli-mode">${providers.map((p) => `<option value="${esc(p.kind)}">${esc(p.label)}</option>`).join('')}</select>
-        <div class="faint" id="cli-signin" style="margin-top:6px">${signinLine(providers[0].kind)}</div></div>`
+        <div class="faint" id="cli-signin" style="margin-top:6px">${signinLine(providers[0].kind)}</div></div>
+      <div class="field" id="model-field" hidden><label for="cli-model">Model</label><select id="cli-model"></select></div>`
     : '';
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
@@ -96,7 +97,14 @@ export function openNewModal({ api, cfg = {}, onCreated }) {
   bg.querySelector('#mkdir-btn').addEventListener('click', createFolder);
   mkdirName.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); createFolder(); } });
 
-  bg.querySelector('#cli-mode')?.addEventListener('change', (e) => { bg.querySelector('#cli-signin').innerHTML = signinLine(e.target.value); });
+  // A provider with tiers (Publik: balanced/fast/smart, first = default) shows a Model select.
+  const showModels = (kind) => {
+    const models = providers.find((x) => x.kind === kind)?.models || [];
+    bg.querySelector('#model-field').hidden = !models.length;
+    bg.querySelector('#cli-model').innerHTML = models.map((m) => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join('');
+  };
+  if (cliField) showModels(providers[0].kind);
+  bg.querySelector('#cli-mode')?.addEventListener('change', (e) => { bg.querySelector('#cli-signin').innerHTML = signinLine(e.target.value); showModels(e.target.value); });
 
   const getSeed = wireSeedSection(bg);
   const close = () => bg.remove();
@@ -113,6 +121,7 @@ export function openNewModal({ api, cfg = {}, onCreated }) {
       const title = bg.querySelector('#title-input').value;
       const browser = bg.querySelector('#browser-mode').value === '1';
       const kind = bg.querySelector('#cli-mode')?.value || 'claude';
+      const model = bg.querySelector('#model-field:not([hidden]) select')?.value || undefined;
       let name;
       if (seed) {
         btn.textContent = seed.scope === 'summary' ? 'Generating context…' : 'Preparing…';
@@ -121,7 +130,7 @@ export function openNewModal({ api, cfg = {}, onCreated }) {
           body: JSON.stringify({ sources: seed.sources, scope: seed.scope, dest: 'new', targetDir: dirInput.value, title, browser }),
         }));
       } else {
-        ({ name } = await api('/api/sessions', { method: 'POST', body: JSON.stringify({ dir: dirInput.value, title, browser, kind }) }));
+        ({ name } = await api('/api/sessions', { method: 'POST', body: JSON.stringify({ dir: dirInput.value, title, browser, kind, model }) }));
       }
       close();
       onCreated(name);

@@ -4,7 +4,7 @@ import { stat, readdir, mkdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
-import { getProvider, providerAvailable, DEFAULT_KIND } from './providers/index.js';
+import { getProvider, providerAvailable, DEFAULT_KIND, runsClaude } from './providers/index.js';
 import { ensureSlot } from './slots.js'; // slots.js imports this file back; both only call each other at run time
 
 const exec = promisify(execFile);
@@ -282,7 +282,7 @@ export function promptText(screen) {
 }
 
 // Claude says whether it's waiting on the user; Codex and agy say nothing (null).
-export const waitState = (s) => (s.kind === 'claude' ? !!s.waitingFor : null);
+export const waitState = (s) => (runsClaude(s.kind) ? !!s.waitingFor : null);
 
 // The menu a session is showing, [] if none. With no waiting state (Codex, agy) a numbered
 // run with a highlighted row counts — their approvals highlight "Yes", so Enter approves.
@@ -364,7 +364,8 @@ export async function relayText(name, text, waiting) {
 export const newSessionName = () => `${config.prefix}${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
 
 // `name`: start under a name reserved earlier (a start that waited in the slot queue).
-export async function createSession({ dir, title, resume, fork, seed, browser, kind, origin, name = newSessionName() }) {
+// model: a provider's tier from the picker (Publik: fast|balanced|smart); others ignore it.
+export async function createSession({ dir, title, resume, fork, seed, browser, kind, model, origin, name = newSessionName() }) {
   const abs = await resolveAllowedDir(dir);
   const provider = getProvider(kind); // claude | codex | … (defaults to claude)
   // Fail clean if the chosen CLI isn't installed here (e.g. a tenant that never
@@ -380,7 +381,7 @@ export async function createSession({ dir, title, resume, fork, seed, browser, k
   // The provider builds the CLI-specific launch command: the binary + resume/fork
   // args + its permission/approval flag. It validates the resume id and throws 400
   // on a bad one.
-  let launch = provider.command() + provider.launchArgs({ resume, fork });
+  let launch = provider.command() + provider.launchArgs({ resume, fork, model });
 
   await tmux(['new-session', '-d', '-s', name, '-c', abs, '-x', '220', '-y', '50']);
   await initServer(); // server is up now — make sure it won't exit when emptied
@@ -403,7 +404,8 @@ export async function createSession({ dir, title, resume, fork, seed, browser, k
   const roEnv = config.sessionMcp && config.mcpTokenReadonly
     ? `POLYMUX_RO='${config.mcpTokenReadonly.replace(/'/g, "'\\''")}' ` : '';
   // Its own name, sent as a header by the session's MCP config (providers/claude.js).
-  await tmux(['send-keys', '-t', name, `${roEnv}POLYMUX_SESSION='${name}' COLORTERM=truecolor ${launch}`, 'Enter']);
+  // launchEnv: provider env (Publik points the CLI at the deck's /publik route).
+  await tmux(['send-keys', '-t', name, `${roEnv}${provider.launchEnv?.(name) || ''}POLYMUX_SESSION='${name}' COLORTERM=truecolor ${launch}`, 'Enter']);
   // Once Claude has booted: name a fresh titled session (so the name shows in
   // Claude and `claude --resume`) and/or type a seed prompt. Background.
   // /rename is a Claude slash command — only send it for providers that have it.

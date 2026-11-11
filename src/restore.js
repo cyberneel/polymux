@@ -9,6 +9,7 @@ import { listSessions, createSession } from './tmux.js';
 import { attachAgents, tail, turnEnded } from './agents.js';
 import { markProactive } from './origin.js';
 import { config } from './config.js';
+import { runsClaude } from './providers/index.js';
 
 const DIR = join(homedir(), '.claude', 'cc-deck');
 const FILE = process.env.POLYMUX_RESTORE_FILE || join(DIR, 'restore.json');
@@ -19,7 +20,7 @@ const CUT_OFF = 'A host restart cut off your last turn mid-task. Pick up where y
 // ends on a turn_duration line once a turn is over (the live status is gone by shutdown).
 // ponytail: Claude only; codex/agy keep their transcripts elsewhere and come back idle.
 export function cutOff(e) {
-  if (!e.resume || (e.kind && e.kind !== 'claude')) return false;
+  if (!e.resume || !runsClaude(e.kind)) return false;
   const t = tail(join(homedir(), '.claude', 'projects', e.dir.replace(/[^a-zA-Z0-9]/g, '-'), `${e.resume}.jsonl`));
   return !!t && turnEnded(t.lines) === false;
 }

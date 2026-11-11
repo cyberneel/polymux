@@ -48,7 +48,7 @@ function sample() {
   if (!turns.size) { clearInterval(sampler); sampler = null; }
 }
 
-const ENGINES = new Set(['claude', 'codex', 'agy']);
+const ENGINES = new Set(['claude', 'codex', 'agy', 'publik']);
 
 // Start: UserPromptSubmit (claude/codex) or agy's first PreInvocation (it fires per model call,
 // so only an untracked conversation starts a turn). End: Stop, all three.

@@ -7,21 +7,27 @@ import { join } from 'node:path';
 import { claude } from './claude.js';
 import { codex } from './codex.js';
 import { agy } from './agy.js';
+import { publik } from './publik.js';
 
-const PROVIDERS = { claude, codex, agy };
+const PROVIDERS = { claude, codex, agy, publik };
 
 // Default to Claude so sessions created before `kind` existed keep working.
 export const DEFAULT_KIND = 'claude';
 export const PROVIDER_KINDS = Object.keys(PROVIDERS);
 export function getProvider(kind) { return PROVIDERS[kind] || PROVIDERS[DEFAULT_KIND]; }
 export function providerList() { return PROVIDER_KINDS.map((k) => ({ kind: k, label: PROVIDERS[k].label })); }
+// Sessions that run the Claude Code CLI itself (Publik is Claude Code on another API): `claude
+// agents` reports them, their transcripts live in ~/.claude/projects, and History resumes them.
+export const runsClaude = (kind) => !kind || kind === 'claude' || kind === 'publik';
 
 // Is a provider's launch binary actually installed? An absolute/relative path is
 // checked directly; a bare name is looked up on PATH. Used so Polymux only OFFERS
 // CLIs that exist here (a tenant that never installed agy shouldn't see it in the
 // picker and crash on "command not found"), and so createSession fails cleanly.
 export async function providerAvailable(kind) {
-  const cmd = (getProvider(kind).command() || '').split(/\s+/)[0]; // strip any args
+  const p = getProvider(kind);
+  if (p.available && !(await p.available())) return false; // e.g. Publik without a key
+  const cmd = (p.command() || '').split(/\s+/)[0]; // strip any args
   if (!cmd) return false;
   if (cmd.includes('/')) { try { await access(cmd, constants.X_OK); return true; } catch { return false; } }
   for (const dir of (process.env.PATH || '').split(':').filter(Boolean)) {
@@ -35,6 +41,6 @@ export async function providerAvailable(kind) {
 // the UI still works. Claude, Codex, agy all resolve on a normal owner box.
 export async function availableProviders() {
   const avail = [];
-  for (const k of PROVIDER_KINDS) if (await providerAvailable(k)) avail.push({ kind: k, label: PROVIDERS[k].label });
+  for (const k of PROVIDER_KINDS) if (await providerAvailable(k)) avail.push({ kind: k, label: PROVIDERS[k].label, ...(PROVIDERS[k].models && { models: PROVIDERS[k].models }) });
   return avail.length ? avail : [{ kind: DEFAULT_KIND, label: PROVIDERS[DEFAULT_KIND].label }];
 }

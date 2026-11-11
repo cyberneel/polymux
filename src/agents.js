@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { readFileSync, openSync, readSync, fstatSync, closeSync, readdirSync, readlinkSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { swr } from './swr.js';
-import { getProvider } from './providers/index.js';
+import { getProvider, runsClaude } from './providers/index.js';
 
 const exec = promisify(execFile);
 
@@ -130,7 +130,7 @@ export const getAgents = swr(async () => {
 // matchAgents with a fresh `claude agents`, only when a Claude session can use it: the exec
 // costs ~0.8 CPU-s, which on a run every 15s was a tenant VM's whole idle floor.
 export async function attachAgents(sessions) {
-  if (sessions.some((s) => !s.kind || s.kind === 'claude')) matchAgents(sessions, await getAgents());
+  if (sessions.some((s) => runsClaude(s.kind))) matchAgents(sessions, await getAgents());
   return sessions;
 }
 
@@ -153,7 +153,7 @@ export function matchAgents(sessions, all) {
   const assign = (s, a) => { s.liveSessionId = a?.sessionId || null; s.claudeStatus = a?.status || null; s.waitingFor = a?.waitingFor || null; s.background = busyInBackground(a); };
   const pending = [];
   for (const s of sessions) {
-    if (s.kind && s.kind !== 'claude') { assignCli(s); continue; } // never borrows a Claude agent by cwd
+    if (!runsClaude(s.kind)) { assignCli(s); continue; } // never borrows a Claude agent by cwd
     const kids = s.panePid ? childPids(s.panePid) : [];
     let a = take((x) => kids.includes(x.pid)) || (s.resumedFrom && take((x) => x.sessionId === s.resumedFrom));
     const reg = !a && kids.map(registry).find((r) => r?.parkedJobId);

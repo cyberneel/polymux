@@ -72,6 +72,7 @@ import { listRemoteSessions } from './remote.js';
 import { availableProviders } from './providers/index.js';
 import { registerAgyMcp, registerAgyHooks } from './providers/agy.js';
 import { getUsage } from './usage.js';
+import { registerPublikRoute, getWallet } from './publik.js';
 import { getPricing } from './pricing.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -153,6 +154,7 @@ app.addHook('onRequest', async (req, reply) => {
   if (req.raw.url?.startsWith('/ws/')) return; // websockets auth in their own handler
   const path = req.raw.url?.split('?')[0] || '/';
   if (PUBLIC_PATHS.has(path)) return;
+  if (path.startsWith('/publik/')) return; // Publik sessions' API route: per-session bearer (publik.js)
   if (isAuthed(req)) return;
 
   // Unified-hub SSO: the hub frames Polymux as <url>?sso=<token>. Redeem it
@@ -191,6 +193,8 @@ app.setNotFoundHandler(async (req, reply) => {
 
 // Liveness for the hosted rollout health poll (public — 200 = the server is serving).
 app.get('/healthz', async () => ({ ok: true }));
+// Publik sessions' Anthropic API calls (see publik.js).
+registerPublikRoute(app);
 // claude/codex/agy turn start/end hooks (see turn-telemetry.js). The key is baked into each
 // CLI's hook command; the body is read for ids only, never kept.
 app.post('/api/turn-hook', async (req, reply) => {
@@ -210,6 +214,7 @@ const CRED_FILES = {
   claude: ['.claude/.credentials.json'],
   codex: ['.codex/auth.json'],
   agy: ['.gemini/antigravity-cli/antigravity-oauth-token', '.gemini/oauth_creds.json'],
+  publik: ['.publik/key'], // Friday's Connect Publik
 };
 const credDest = (rel) => Object.values(CRED_FILES).flat().includes(rel) ? join(process.env.HOME || homedir(), rel) : null;
 const mtimeOf = async (p) => Math.floor((await stat(p).catch(() => null))?.mtimeMs || 0);
@@ -304,7 +309,7 @@ app.get('/api/remote/sessions', async () => {
 
 // prompt: typed into the CLI once it boots (the iOS app's Siri and share sheet start work this way).
 app.post('/api/sessions', async (req, reply) => {
-  const { dir, title, resume, fork, browser, kind, prompt } = req.body || {};
+  const { dir, title, resume, fork, browser, kind, model, prompt } = req.body || {};
   if (!dir) return reply.code(400).send({ error: 'dir is required' });
   try {
     // Don't launch a duplicate: if the session being resumed is already running,
@@ -321,7 +326,7 @@ app.post('/api/sessions', async (req, reply) => {
     // so it picks up what happened elsewhere (consumed so it won't re-inject).
     const notes = resume && !fork ? await consumeNotesSeed(resume) : undefined;
     const seed = [notes, typeof prompt === 'string' ? prompt.trim() : ''].filter(Boolean).join('\n\n') || undefined;
-    const name = await createSession({ dir, title, resume, fork, seed, browser, kind });
+    const name = await createSession({ dir, title, resume, fork, seed, browser, kind, model });
     return { name };
   } catch (err) {
     return reply.code(err.statusCode || 500).send({ error: err.message });
@@ -803,7 +808,8 @@ app.get('/api/version', async () => {
 
 // ---- Usage / ROI ----
 app.get('/api/burn', async () => {
-  return await getBurn();
+  const [burn, publik] = await Promise.all([getBurn(), getWallet()]);
+  return publik ? { ...burn, publik } : burn;
 });
 
 app.get('/api/usage', async (req, reply) => {

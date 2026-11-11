@@ -10,6 +10,7 @@ import { config } from './config.js';
 import { listSessions, killSession, createSession, newSessionName } from './tmux.js';
 import { getAgents, matchAgents } from './agents.js';
 import { findTranscriptFile } from './graph.js';
+import { runsClaude } from './providers/index.js';
 
 const FILE = process.env.POLYMUX_QUEUE_FILE || join(homedir(), '.claude', 'cc-deck', 'queue.json');
 const MAX_QUEUE = 10;
@@ -19,7 +20,7 @@ let draining = false;
 
 // Idle = the CLI exited (the pane is back at its shell) or Claude sits at its prompt.
 // A Codex/agy session at its prompt is never closed: History resumes only Claude conversations.
-const isIdle = (s) => /^-?(ba|z|da|fi)?sh$/.test(s.paneCommand) || ((!s.kind || s.kind === 'claude') && s.claudeStatus === 'idle' && !s.waitingFor);
+const isIdle = (s) => /^-?(ba|z|da|fi)?sh$/.test(s.paneCommand) || (runsClaude(s.kind) && s.claudeStatus === 'idle' && !s.waitingFor);
 
 // The session to close for a slot: one Friday started, nobody attached, idle for idleMs
 // (Friday polls a session every 60s to relay its reply, so it gets to read it first).
@@ -55,7 +56,7 @@ const DONE_MS = 30 * 60_000, LEFT_MS = 12 * 3600_000;
 const closed = new Map(); // transcript id -> times closed. ponytail: in memory, a restart forgets the backoff
 
 export function reapable(s, idleFor, done, closes = 0) {
-  return s.origin === 'proactive' && !s.attached && (!s.kind || s.kind === 'claude')
+  return s.origin === 'proactive' && !s.attached && runsClaude(s.kind)
     && idleFor >= (done ? DONE_MS : LEFT_MS) * 2 ** closes;
 }
 

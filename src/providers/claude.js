@@ -67,8 +67,10 @@ export const claude = {
     if (turnTelemetry()) {
       // Turn start/end → /api/turn-hook (per-turn RAM/CPU telemetry). -o /dev/null matters: a
       // UserPromptSubmit hook's stdout is injected into the prompt. `|| true` = never block a turn.
-      const h = [{ hooks: [{ type: 'command', command: hookCurl('claude') }] }];
-      try { await ensureDir(); await writeFile(TURN_HOOKS_PATH, JSON.stringify({ hooks: { UserPromptSubmit: h, Stop: h } })); flags += ` --settings ${TURN_HOOKS_PATH}`; } catch { /* skip telemetry */ }
+      // Per kind: Publik reuses this method (this = publik) and reports its turns as 'publik'.
+      const h = [{ hooks: [{ type: 'command', command: hookCurl(this.kind) }] }];
+      const file = this.kind === 'claude' ? TURN_HOOKS_PATH : TURN_HOOKS_PATH.replace('turn-hooks', `turn-hooks-${this.kind}`);
+      try { await ensureDir(); await writeFile(file, JSON.stringify({ hooks: { UserPromptSubmit: h, Stop: h } })); flags += ` --settings ${file}`; } catch { /* skip telemetry */ }
     }
     if (nudges.length) {
       const nudge = nudges.join(' ').replace(/'/g, "'\\''"); // shell-safe single quotes

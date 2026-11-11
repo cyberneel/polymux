@@ -13,17 +13,23 @@ export async function fetchBurn() {
   return null;
 }
 
+const usd = (micros) => `$${(Number(micros) / 1e6).toFixed(2)}`;
+// Publik wallet balance as one more pill segment (alone when there's no Claude plan to show).
+const publikSeg = (b) => (b?.publik?.balance_micros != null ? `<span class="bp-seg" title="Publik balance">${usd(b.publik.balance_micros)}</span>` : '');
+
 export function renderBurnPill(btn, burn) {
   if (!btn) return;
-  if (!burn || !burn.available) { btn.style.display = 'none'; return; }
+  const pk = publikSeg(burn);
+  if (!burn || (!burn.available && !pk)) { btn.style.display = 'none'; return; }
+  if (!burn.available) { btn.innerHTML = pk; btn.title = 'Publik balance. Tap for detail.'; btn.style.display = ''; return; }
   const s = burn.limits?.session, w = burn.limits?.weekly;
   const scoped = burn.scopedWeekly || []; // model-scoped weeklies (e.g. Fable, cap = ½ overall)
   // Wrapped in .bp-scoped so the face can drop these on narrow screens (they'd
   // overflow the top bar); the popover still lists them. display:contents keeps
   // the inner spans as flex items on desktop.
   const scSegs = scoped.map((x) => `<span class="bp-scoped"><span class="bp-sep">/</span><span class="bp-seg ${burnCls(x)}" title="${esc(x.model)} weekly">${pctOf(x) ?? '–'}%</span></span>`).join('');
-  btn.innerHTML = `${paceEmoji(overallPace(burn))}<span class="bp-seg ${burnCls(s)}">${pctOf(s) ?? '–'}%</span><span class="bp-sep">/</span><span class="bp-seg ${burnCls(w)}">${pctOf(w) ?? '–'}%</span>${scSegs}`;
-  btn.title = `Session ${pctOf(s)}%, weekly ${pctOf(w)}%${scoped.map((x) => `, ${x.model} ${pctOf(x)}%`).join('')} used. Tap for detail.`;
+  btn.innerHTML = `${paceEmoji(overallPace(burn))}<span class="bp-seg ${burnCls(s)}">${pctOf(s) ?? '–'}%</span><span class="bp-sep">/</span><span class="bp-seg ${burnCls(w)}">${pctOf(w) ?? '–'}%</span>${scSegs}${pk && `<span class="bp-sep">/</span>${pk}`}`;
+  btn.title = `Session ${pctOf(s)}%, weekly ${pctOf(w)}%${scoped.map((x) => `, ${x.model} ${pctOf(x)}%`).join('')} used${pk ? `, Publik ${usd(burn.publik.balance_micros)} left` : ''}. Tap for detail.`;
   btn.style.display = '';
 }
 
@@ -50,7 +56,13 @@ function detailHtml(b) {
       <div class="faint">resets in ${resets}, budget pace ${((l.budget_pace || 0) * 100).toFixed(0)}%</div></div>`;
   };
   const br = b.burn_rate;
-  return `<div class="burn-pop-title">Plan limits</div>
+  const pk = b.publik;
+  const publik = !pk ? '' : pk.error ? `<div class="burn-pop-title">Publik</div><div class="faint">${esc(pk.error)}</div>`
+    : `<div class="burn-pop-title">Publik</div><div class="limit"><div class="limit-top"><span>Balance</span><span>${usd(pk.balance_micros)}</span></div>
+      <div class="faint">${pk.spent_today_micros != null ? `today ${usd(pk.spent_today_micros)}${pk.daily_cap_micros ? ` of ${usd(pk.daily_cap_micros)} cap` : ''}` : ''}${pk.week_used_micros != null ? `, this week ${usd(pk.week_used_micros)}` : ''}</div>
+      ${pk.top_up_url ? `<a href="${esc(pk.top_up_url)}" target="_blank" rel="noopener">Top up</a>` : ''}</div>`;
+  if (!b.available) return publik;
+  return `${publik}<div class="burn-pop-title">Plan limits</div>
     ${card('Session (5h)', lim.session)}${card('Weekly', lim.weekly)}${(b.scopedWeekly || []).map((s) => card(`${esc(s.model)} weekly <span class="faint">(½ cap)</span>`, s)).join('')}${lim.monthly ? card('Monthly', lim.monthly) : ''}
     ${br ? `<div class="faint" style="margin-top:2px">${paceEmoji(b.limits?.[br.limit]?.status)} burn ${Number(br.percent_per_hour).toFixed(1)}%/h (${esc(br.trend || '')})${br.estimated_minutes_to_100 ? `, ~${Math.round(br.estimated_minutes_to_100 / 60 * 10) / 10}h to 100%` : ''}</div>` : ''}
     ${b.recommendation ? `<div class="faint">${esc(String(b.recommendation).replace(/_/g, ' '))}</div>` : ''}`;
@@ -63,7 +75,7 @@ export async function openBurnPopover(btn, burn, refresh) {
   if (open) { open.remove(); return; }
   const p = document.createElement('div');
   p.id = 'burn-pop'; p.className = 'burn-pop';
-  p.innerHTML = burn && burn.available ? detailHtml(burn) : '<div class="faint">ccburn unavailable</div>';
+  p.innerHTML = burn && (burn.available || burn.publik) ? detailHtml(burn) : '<div class="faint">ccburn unavailable</div>';
   const r = btn.getBoundingClientRect();
   p.style.top = `${r.bottom + 6}px`;
   if (window.matchMedia('(max-width: 700px)').matches) {
@@ -81,6 +93,6 @@ export async function openBurnPopover(btn, burn, refresh) {
   if (refresh) {
     const fresh = await refresh();
     const still = document.getElementById('burn-pop');
-    if (still && fresh && fresh.available) still.innerHTML = detailHtml(fresh);
+    if (still && fresh && (fresh.available || fresh.publik)) still.innerHTML = detailHtml(fresh);
   }
 }
