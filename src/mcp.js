@@ -424,7 +424,8 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
     description:
       "List the user's currently ACTIVE Deep Sessions (Claude Code) with live, structured status — for detecting state transitions (a Deep Session finishing, waiting for the user, or exiting). " +
       'Returns a JSON array; poll and diff the `status`/`needs_input` fields to notice transitions. Each item: ' +
-      '{ session_id, name, title, dir, status, needs_input, waiting_for, attached, last_activity, pending_notes }. ' +
+      '{ session_id, name, title, dir, status, needs_input, waiting_for, background, attached, last_activity, pending_notes }. ' +
+      '`background` = idle at its prompt, but agents it started are still working (more rounds will follow). ' +
       '`pending_notes` counts saved notes (save_session_summary) not yet delivered — read them with pending_notes, deliver with apply_notes. ' +
       "`status` is one of: running (Claude is working), waiting_input (blocked on the user — a prompt/permission/question), idle (at its prompt, not working), done (Claude exited, the shell remains), queued (the deck is at its session limit; it starts when a slot opens). " +
       '`name` is stable for the Deep Session\'s lifetime; `session_id` is the live conversation id of its CLI (Claude, Codex or agy; changes across resume/fork) or null if the CLI isn\'t running.',
@@ -443,6 +444,7 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
         status,
         needs_input: status === 'waiting_input',
         waiting_for: s.waitingFor || null,
+        background: status === 'idle' && !!s.background,
         attached: s.attached,
         // Output too: tmux's session activity moves only on a client's keys, so a session Friday
         // seeded looked untouched until the user opened it, and its finished reply never relayed.
