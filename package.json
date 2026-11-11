@@ -16,10 +16,15 @@
   "engines": {
     "node": ">=20"
   },
+  "os": [
+    "linux",
+    "darwin"
+  ],
   "scripts": {
     "setup": "bash setup.sh",
     "update": "bash update.sh",
     "build": "node esbuild.config.js",
+    "prestart": "node esbuild.config.js",
     "start": "node src/server.js",
     "snapshot": "node scripts/snapshot.mjs",
     "dev": "node esbuild.config.js --watch & node --watch src/server.js",
