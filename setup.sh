@@ -80,7 +80,7 @@ else
     sed_i "s|^POLYMUX_PASSWORD=.*|POLYMUX_PASSWORD=$esc_pw|" .env
     ok "Password set; secret generated."
   else
-    warn "No password set yet — edit POLYMUX_PASSWORD in .env before exposing Polymux."
+    warn "No password set yet — login stays off until you set POLYMUX_PASSWORD in .env."
   fi
 fi
 

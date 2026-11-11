@@ -138,7 +138,7 @@ app.addHook('onRequest', async (req, reply) => {
   reply.header('Content-Security-Policy', FRAME_ANCESTORS);
 });
 
-// Session-cookie attributes. Inside the hub iframe (systems.cyberneel.com) the cookie needs
+// Session-cookie attributes. Inside a hub iframe (another origin) the cookie needs
 // CHIPS — SameSite=None; Secure; Partitioned — to flow on every browser (Safari ITP / Firefox
 // TCP / Chrome 3PC) and in the cross-domain self-host case; Partitioned keys it to the top-level
 // hub site. Over plain-http tailnet access a Secure cookie is dropped, so fall back to Lax there.

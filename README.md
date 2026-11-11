@@ -157,9 +157,8 @@ Manual setup instead of the script:
 
 ```bash
 npm install && npm run build
-cp .env.example .env      # then set POLYMUX_PASSWORD and a random POLYMUX_SECRET:
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-npm start
+cp .env.example .env      # then set POLYMUX_PASSWORD
+npm start                 # no POLYMUX_SECRET? one is generated and kept in ~/.claude/cc-deck/secret
 ```
 
 Rebuild the frontend after editing anything in `src/client/` with `npm run build`
@@ -194,7 +193,8 @@ sessions launch inside the container against a folder you mount.
 
 ```bash
 # 1. create a .env next to docker-compose.yml
-printf 'POLYMUX_PASSWORD=%s\nPOLYMUX_SECRET=%s\n' 'choose-a-password' "$(openssl rand -hex 32)" > .env
+read -rsp 'Polymux password: ' PW; echo
+printf 'POLYMUX_PASSWORD=%s\nPOLYMUX_SECRET=%s\n' "$PW" "$(openssl rand -hex 32)" > .env
 # 2. point the workspace at your code (edit ./workspace in docker-compose.yml), then:
 docker compose up -d
 # 3. log the CLIs in once (stored in a volume, so it persists):
@@ -249,7 +249,7 @@ for the full annotated list.
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `POLYMUX_PASSWORD` | — | Login password (**required**). |
-| `POLYMUX_SECRET` | insecure default | Random string used to sign cookies + OAuth tokens. Set this. |
+| `POLYMUX_SECRET` | generated | Random string used to sign cookies + OAuth tokens. Unset, Polymux generates one on first run and keeps it in `~/.claude/cc-deck/secret` (mode 600; `POLYMUX_SECRET_FILE` moves it), and won't start if it can't write it. |
 | `PORT` | `8787` | Listen port. |
 | `POLYMUX_BIND` | `127.0.0.1` | Bind address — keep loopback so the raw port isn't exposed. |
 | `POLYMUX_ROOTS` | `$HOME` | Colon-separated dirs sessions may launch/browse under. |
@@ -414,7 +414,7 @@ session. It's **attach-only** for now (no rename/kill/notes).
 
 ```bash
 # in .env — comma/space-separated; "sshTarget" or "label=sshTarget"
-POLYMUX_REMOTE_HOSTS=laptop=cyber@laptop.tailnet.ts.net dell-box
+POLYMUX_REMOTE_HOSTS=laptop=me@laptop.tailnet.ts.net devbox
 ```
 
 Two prerequisites, because a session is only remotely attachable if its terminal is shareable:

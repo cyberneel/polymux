@@ -1,5 +1,7 @@
-import { resolve } from 'node:path';
+import { resolve, join, dirname } from 'node:path';
 import { homedir } from 'node:os';
+import { randomBytes } from 'node:crypto';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -27,14 +29,14 @@ export const config = {
   // Directories under which new sessions may be launched / browsed.
   roots: parseRoots(process.env.POLYMUX_ROOTS),
   // Directories whose Claude transcripts are hidden from the History tab — e.g.
-  // dirs where another app (hyre) runs `claude -p` headlessly. Colon-separated.
+  // dirs where another app runs `claude -p` headlessly. Colon-separated.
   excludeDirs: (process.env.POLYMUX_EXCLUDE_DIRS || '')
     .split(':')
     .map((p) => p.trim())
     .filter(Boolean)
     .map((p) => resolve(p)),
-  // Hosted-tenant account hub. systems' provisioning injects a tokenized
-  // https://systems.cyberneel.com/account?t=… URL only into hosted-tenant VMs;
+  // Hosted-tenant account hub. Hosted provisioning injects a tokenized
+  // https://<control-plane>/account?t=… URL only into hosted-tenant VMs;
   // when set, the UI shows an "Account ↗" link to it. Self-host = unset = hidden.
   accountUrl: (process.env.ACCOUNT_URL || '').trim(),
   // Origins allowed to iframe Polymux, beyond same-origin (CSP frame-ancestors).
@@ -91,7 +93,7 @@ export const config = {
   permissionMode: (process.env.POLYMUX_PERMISSION_MODE || '').trim(),
   // Remote hosts whose tmux sessions Polymux lists + attaches over SSH (tailnet).
   // Comma/space-separated entries: "sshTarget" or "label=sshTarget"
-  // (e.g. "laptop=cyber@laptop.tailnet.ts.net dell-arch-cyber"). Needs key-based SSH.
+  // (e.g. "laptop=me@laptop.tailnet.ts.net devbox"). Needs key-based SSH.
   remoteHosts: (process.env.POLYMUX_REMOTE_HOSTS || '')
     .split(/[,\s]+/).map((s) => s.trim()).filter(Boolean)
     .map((entry) => {
@@ -146,7 +148,15 @@ export const config = {
 if (!config.password) {
   console.warn('[polymux] WARNING: POLYMUX_PASSWORD is not set — login is effectively disabled. Set it in .env.');
 }
+// No POLYMUX_SECRET: make a random one on first run and keep it (0600), so logins survive a
+// restart and nobody can sign a cookie with a default. Can't write it → don't start.
 if (!config.secret) {
-  console.warn('[polymux] WARNING: POLYMUX_SECRET is not set — using an insecure default. Set a random value in .env.');
-  config.secret = 'insecure-development-secret-change-me';
+  const file = process.env.POLYMUX_SECRET_FILE || join(homedir(), '.claude', 'cc-deck', 'secret');
+  try { config.secret = readFileSync(file, 'utf8').trim(); } catch {}
+  if (!config.secret) {
+    config.secret = randomBytes(32).toString('hex');
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, config.secret + '\n', { mode: 0o600 });
+    console.warn(`[polymux] POLYMUX_SECRET is not set: generated one and saved it to ${file}.`);
+  }
 }

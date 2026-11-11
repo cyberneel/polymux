@@ -8,7 +8,7 @@ const menu = (cursorOnYes) => [
   "claude --append-system-prompt 'if unsure, answer yes or no.",
   "> keep going'",
   ' Accessing workspace:',
-  ' /home/cyber/friday-sessions/autocross-roster',
+  ' /home/me/projects/demo-app',
   " Claude Code'll be able to read, edit, and execute files here.",
   `${cursorOnYes ? '  ' : ' ❯'} No, exit`,
   `${cursorOnYes ? ' ❯' : '  '} Yes, I trust this folder`,

@@ -24,7 +24,7 @@ test('the provider token is an ES256 JWT Apple can verify, reused within the hou
 });
 
 test('a device registers once per token; junk is refused', async () => {
-  const d = { token: 'ab'.repeat(32), bundleId: 'XTL-AC0E5627.com.cyberneel.polymux', environment: 'sandbox' };
+  const d = { token: 'ab'.repeat(32), bundleId: 'XTL-ABCD1234.com.example.polymux', environment: 'sandbox' };
   await registerDevice(d);
   await registerDevice({ ...d, environment: 'production' });
   const saved = JSON.parse(readFileSync(process.env.POLYMUX_APNS_FILE, 'utf8'));
