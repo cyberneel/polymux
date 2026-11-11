@@ -72,11 +72,15 @@ import { listRemoteSessions } from './remote.js';
 import { availableProviders } from './providers/index.js';
 import { registerAgyMcp, registerAgyHooks } from './providers/agy.js';
 import { getUsage } from './usage.js';
-import { registerPublikRoute, getWallet } from './publik.js';
+import { registerPublikRoute, getWallet, runGate } from './publik.js';
+import { ensureSignedIn, readCredential, resolveProvider } from './publik-sdk.js';
 import { getPricing } from './pricing.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, '..', 'public');
+
+// Publik's built-app check: PUBLIK_SELF_TEST=1 npm start prints one line and exits.
+if (process.env.PUBLIK_SELF_TEST) await ensureSignedIn();
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL || 'info' } });
 
@@ -226,6 +230,7 @@ async function signin(kind) {
   const rels = CRED_FILES[kind] || [];
   if (rels.some((r) => accountCreds.has(r))) return 'account';
   for (const r of rels) if (await mtimeOf(credDest(r))) return 'deck';
+  if (kind === 'publik' && resolveProvider().kind === 'publik') return 'deck'; // "Use Publik models"
   return null;
 }
 
@@ -851,6 +856,10 @@ app.log.info(`Polymux listening on ${address} (roots: ${config.roots.join(', ')}
 
 // Keep Polymux's dedicated tmux server alive even when it has no sessions.
 await initServer().catch(() => {});
+
+// Opted into Publik ("Use Publik models")? Its gate runs at each start: checks the sign-in and
+// counts usage (off with DO_NOT_TRACK=1 or PUBLIK_TELEMETRY=off). Nobody else contacts Publik.
+if (readCredential()?.choice) runGate();
 
 // Register the read-only Polymux MCP with agy (persistent, idempotent) so agy
 // sessions get the same handoff-aware toolset as Claude/Codex. Best-effort.

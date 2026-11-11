@@ -3,7 +3,7 @@
 // and the model tier picked in New Session. See ../publik.js for the route.
 import { config } from '../config.js';
 import { claude } from './claude.js';
-import { connected, sessionToken } from '../publik.js';
+import { connected, offered, sessionToken } from '../publik.js';
 
 // Picker tier → the Claude alias the CLI starts on (the route maps it back to the Publik tier,
 // so the CLI's own /model switching keeps working).
@@ -14,8 +14,9 @@ export const publik = {
   kind: 'publik',
   label: 'Publik',
   models: [{ id: 'balanced', label: 'Balanced' }, { id: 'fast', label: 'Fast' }, { id: 'smart', label: 'Smart' }],
-  // Offered only once a key is in ~/.publik/key (Friday's Connect Publik, or by hand).
+  // Usable once there's a key: "Use Publik models" (offer), Friday's Connect Publik, or ~/.publik/key.
   available: connected,
+  offer: offered,
   launchArgs({ resume, fork, model }) {
     return `${claude.launchArgs({ resume, fork })} --model ${Object.hasOwn(MODELS, model) ? MODELS[model] : MODELS.balanced}`;
   },

@@ -39,8 +39,15 @@ export async function providerAvailable(kind) {
 // Providers whose binary is present here — what the New Session picker should show.
 // Never empty: if nothing resolves (a broken install) fall back to the default so
 // the UI still works. Claude, Codex, agy all resolve on a normal owner box.
+// A provider that can set itself up (Publik's offer) shows with gate 'setup' until it's usable,
+// then 'change'.
 export async function availableProviders() {
   const avail = [];
-  for (const k of PROVIDER_KINDS) if (await providerAvailable(k)) avail.push({ kind: k, label: PROVIDERS[k].label, ...(PROVIDERS[k].models && { models: PROVIDERS[k].models }) });
+  for (const k of PROVIDER_KINDS) {
+    const p = PROVIDERS[k], on = await providerAvailable(k), offer = p.offer?.();
+    if (on || (offer && await providerAvailable(DEFAULT_KIND))) {
+      avail.push({ kind: k, label: p.label, ...(p.models && { models: p.models }), ...(offer && { gate: on ? 'change' : 'setup' }) });
+    }
+  }
   return avail.length ? avail : [{ kind: DEFAULT_KIND, label: PROVIDERS[DEFAULT_KIND].label }];
 }

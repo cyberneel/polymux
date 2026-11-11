@@ -1,18 +1,59 @@
 // Publik (publikhq.com): pay-as-you-go models behind an Anthropic-compatible API. A Publik session
 // is the normal `claude` CLI pointed at this deck's /publik/<session>/ route, which holds the key
-// (~/.publik/key) and forwards to Publik. The CLI only ever sees a per-session token, never the key.
+// and forwards to Publik. The CLI only ever sees a per-session token, never the key.
+//
+// Zero-setup: "Use Publik models" runs Publik's sign-in gate (publik-sdk.js) here in the server and
+// shows its screens in the browser; it provisions this install's own key, so nothing is pasted.
+// Off unless someone opts in: the build's app token (publik-app-token.txt) only makes the choice
+// appear. Nothing contacts Publik until that click, then at each start for whoever opted in.
 import { readFile } from 'node:fs/promises';
+import { setImmediate as tick } from 'node:timers/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { Readable } from 'node:stream';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from './config.js';
 import { swr } from './swr.js';
+import { DEFAULT_BASE_URL, appToken, ensureSignedIn, readCredential, resolveProvider, setChoice } from './publik-sdk.js';
 
-const API = 'https://publikhq.com/api/';
 export const keyPath = () => join(process.env.HOME || homedir(), '.publik', 'key');
-const readKey = () => readFile(keyPath(), 'utf8').then((k) => k.trim(), () => '');
+// { apiKey, baseURL } or null. Key order: PUBLIK_API_KEY, then this install's key once "Connect
+// your plan" was picked, then ~/.publik/key (Friday's Connect Publik, or by hand).
+const readKey = async () => {
+  const p = resolveProvider();
+  if (p.kind === 'publik') return p;
+  const c = gate?.prior === 'publik' && readCredential(); // mid-Change: live sessions keep working
+  if (c) return { apiKey: c.key, baseURL: c.base_url || DEFAULT_BASE_URL };
+  const k = await readFile(keyPath(), 'utf8').then((x) => x.trim(), () => '');
+  return k ? { apiKey: k, baseURL: DEFAULT_BASE_URL } : null;
+};
 export const connected = async () => !!(await readKey());
+// This build can offer "Use Publik models" (it carries an app token).
+export const offered = () => appToken().startsWith('pat_');
+
+// The gate, driven from the browser: show() parks the screen until /api/publik/action presses a
+// button. One gate at a time; a cancelled gate's later screens never resolve, so it just stops.
+let gate = null; // { screen, press, openUrl, prior, done }
+export function runGate() {
+  if (gate) return gate.done;
+  const g = gate = { screen: null, press: null, openUrl: null, prior: null };
+  const ui = {
+    show: (s, signal) => new Promise((resolve) => {
+      if (g !== gate) return;
+      g.screen = s; g.press = resolve;
+      signal.addEventListener('abort', () => { if (g.press === resolve) g.screen = g.press = null; });
+      // Unreachable at boot with nobody watching: check again on its own.
+      if (s.id === 'unreachable') setTimeout(() => { if (g.press === resolve) resolve('retry'); }, 60_000).unref();
+    }),
+    openUrl: (u) => { g.openUrl = u; },
+  };
+  g.done = ensureSignedIn(ui).catch((e) => console.error(`publik: ${e.message}`)).finally(() => { if (gate === g) gate = null; });
+  return g.done;
+}
+export async function publikState() {
+  if (gate) return { state: 'gate', screen: gate.screen };
+  return { state: (await readKey()) ? 'connected' : offered() ? 'offer' : 'off' };
+}
 
 // The session's bearer: derived from the app secret + session name, so it survives a Polymux
 // restart (KillMode=process keeps the CLI, and the token in its env, alive).
@@ -52,22 +93,49 @@ export function fold(b) {
 // per session once Publik sends the charge for streams too; until then the wallet is the truth.
 export function registerPublikRoute(app) {
   const err = (reply, code, type, message) => reply.code(code).send({ type: 'error', error: { type, message } });
+  // The "Use Publik models" dialog (under /api, so behind Polymux's login).
+  app.get('/api/publik', publikState);
+  app.post('/api/publik/start', async (req, reply) => {
+    if (!offered()) return reply.code(400).send({ error: "This build of Polymux can't set up Publik." });
+    if (!gate) {
+      const prior = readCredential()?.choice ?? null;
+      setChoice(null); // ask again: Connect your plan, or Use my own key
+      runGate();
+      gate.prior = prior;
+    }
+    return publikState();
+  });
+  app.post('/api/publik/action', async (req, reply) => {
+    const a = req.body?.action;
+    if (!gate?.press || !gate.screen.buttons.some((b) => b.action === a)) return reply.code(409).send({ error: 'That screen is gone. Try again.' });
+    gate.openUrl = null;
+    gate.press(a);
+    const g = gate;
+    await tick(); // the gate opens its link right after the press
+    return { ...(await publikState()), open_url: g.openUrl };
+  });
+  app.post('/api/publik/cancel', async () => {
+    if (gate?.prior) setChoice(gate.prior);
+    gate = null;
+    return publikState();
+  });
+
   app.post('/publik/:name/*', {
     bodyLimit: 64 << 20, // a long conversation with screenshots is several MB
     onRequest: async (req, reply) => { if (!tokenOk(req)) return err(reply, 401, 'authentication_error', 'bad token'); },
   }, async (req, reply) => {
     const rest = req.params['*'];
     if (!/^v1\/[\w/-]+$/.test(rest)) return err(reply, 404, 'not_found_error', 'unknown path');
-    const key = await readKey();
-    if (!key) return err(reply, 401, 'authentication_error', "Publik isn't connected: put your key in ~/.publik/key.");
+    const p = await readKey();
+    if (!p) return err(reply, 401, 'authentication_error', "Publik isn't set up: pick Use Publik models in Polymux, or put a key in ~/.publik/key.");
     const q = req.raw.url.indexOf('?');
-    const headers = { authorization: `Bearer ${key}`, 'content-type': 'application/json' };
+    const headers = { authorization: `Bearer ${p.apiKey}`, 'content-type': 'application/json' };
     for (const h of ['anthropic-version', 'anthropic-beta']) if (req.headers[h]) headers[h] = req.headers[h];
     const ac = new AbortController();
     reply.raw.on('close', () => { if (!reply.raw.writableFinished) ac.abort(); }); // Esc in the CLI stops the upstream turn too
     let r;
     try {
-      r = await fetch(API + rest + (q >= 0 ? req.raw.url.slice(q) : ''), { method: 'POST', headers, body: JSON.stringify(fold(req.body)), signal: ac.signal });
+      r = await fetch(`${p.baseURL}/${rest.slice(3)}${q >= 0 ? req.raw.url.slice(q) : ''}`, { method: 'POST', headers, body: JSON.stringify(fold(req.body)), signal: ac.signal });
     } catch (e) {
       return err(reply, 502, 'api_error', `Publik unreachable: ${e.message}`);
     }
@@ -81,10 +149,10 @@ export function registerPublikRoute(app) {
 // Wallet for the usage pill: balance, today's and this week's spend, the cap, the top-up link.
 // null when Publik isn't connected.
 export const getWallet = swr(async () => {
-  const key = await readKey();
-  if (!key) return null;
+  const p = await readKey();
+  if (!p) return null;
   try {
-    const r = await fetch(`${API}v1/wallet`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(8000) });
+    const r = await fetch(`${p.baseURL}/wallet`, { headers: { authorization: `Bearer ${p.apiKey}` }, signal: AbortSignal.timeout(8000) });
     if (!r.ok) return { error: `wallet: HTTP ${r.status}` };
     const w = await r.json();
     const top = typeof w.top_up_url === 'string' && w.top_up_url.startsWith('https://') ? w.top_up_url : null;

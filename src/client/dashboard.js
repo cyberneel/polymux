@@ -933,7 +933,7 @@ function openNewModal() {
   loadBurn(); // top-bar ccburn pill (all tabs)
   loadSnap(); // last-snapshot age indicator
   checkVersion();
-  maybeShowIntro(); // first-run walkthrough (once)
+  maybeShowIntro({ cfg, api }); // first-run walkthrough (once)
   setInterval(refresh, 4000);
   setInterval(loadBurn, 60_000);
   setInterval(loadSnap, 60_000);

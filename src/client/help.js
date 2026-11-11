@@ -1,6 +1,7 @@
 // In-app Help page + first-run walkthrough. Static content (no user data), so the
 // HTML is written directly. openHelp() shows the full reference; maybeShowIntro()
 // shows a short welcome once (localStorage-gated).
+import { openPublikGate } from './publikgate.js';
 
 const INTRO_KEY = 'ccdeck.introSeen.v1';
 
@@ -160,10 +161,12 @@ export function openHelp() {
 }
 
 // First visit: a short welcome, with a link to the full help. Shown once.
-export function maybeShowIntro() {
+// With an api helper and a build that offers Publik, the welcome also offers "Use Publik models".
+export function maybeShowIntro({ cfg, api } = {}) {
   let seen = false;
   try { seen = localStorage.getItem(INTRO_KEY) === '1'; } catch { /* private mode */ }
   if (seen) return;
+  const publik = api && cfg?.providers?.some((p) => p.gate === 'setup');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `<div class="modal intro-modal">
@@ -178,13 +181,16 @@ export function maybeShowIntro() {
         to move files in.</li>
       <li>Switch fast with <kbd>Alt</kbd>+<kbd>\`</kbd> or <kbd>Alt</kbd>+<kbd>1–9</kbd>.</li>
     </ol>
+    ${publik ? `<p>No Claude login or API key? <b>Use Publik models</b>: pay-as-you-go, and nothing to paste.</p>` : ''}
     <div class="modal-actions">
       <button id="intro-help">Open full help</button>
+      ${publik ? '<button id="intro-publik">Use Publik models</button>' : ''}
       <button class="primary" id="intro-go" data-esc>Get started</button>
     </div>
   </div>`;
   document.body.appendChild(bg);
   const done = () => { try { localStorage.setItem(INTRO_KEY, '1'); } catch { /* */ } bg.remove(); };
   bg.querySelector('#intro-go').addEventListener('click', done);
+  bg.querySelector('#intro-publik')?.addEventListener('click', () => { done(); openPublikGate({ api }); });
   bg.querySelector('#intro-help').addEventListener('click', () => { done(); openHelp(); });
 }

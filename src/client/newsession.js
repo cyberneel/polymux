@@ -4,6 +4,7 @@
 //   cfg      - /api/config result ({ roots, home, launchCommand })
 //   onCreated(name) - what to do once a session is launched (navigate / switch)
 import { SEED_FIELD_HTML, wireSeedSection } from './seedpicker.js';
+import { openPublikGate } from './publikgate.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -14,9 +15,12 @@ export function openNewModal({ api, cfg = {}, onCreated }) {
   // which login that CLI will use (logins are managed on the account page when there is one).
   const signinLine = (kind) => {
     const p = providers.find((x) => x.kind === kind) || providers[0];
+    // Publik can set itself up ("Use Publik models"): no key to paste.
+    if (p.gate === 'setup') return `${esc(p.label)}: no key needed. <a href="#" data-gate>Use Publik models</a>`;
+    const change = p.gate === 'change' ? ` <a href="#" data-gate>Change</a>` : '';
     if (!('signin' in p)) return ''; // an older server that doesn't report logins
-    if (p.signin === 'account') return `${esc(p.label)}: signed in through your account`;
-    if (p.signin === 'deck') return `${esc(p.label)}: signed in on this deck`;
+    if (p.signin === 'account') return `${esc(p.label)}: signed in through your account${change}`;
+    if (p.signin === 'deck') return `${esc(p.label)}: signed in on this deck${change}`;
     return `${esc(p.label)}: no login found here` + (cfg.account_url
       ? `. <a href="${esc(cfg.account_url)}" target="_blank" rel="noopener">Connect it on your account page</a>` : '');
   };
@@ -105,6 +109,13 @@ export function openNewModal({ api, cfg = {}, onCreated }) {
   };
   if (cliField) showModels(providers[0].kind);
   bg.querySelector('#cli-mode')?.addEventListener('change', (e) => { bg.querySelector('#cli-signin').innerHTML = signinLine(e.target.value); showModels(e.target.value); });
+  // Publik's gate, then the line again from fresh /api/config.
+  const setUpPublik = () => openPublikGate({ api, onDone: async () => {
+    const fresh = await api('/api/config').catch(() => null);
+    if (fresh?.providers?.length) providers.splice(0, providers.length, ...fresh.providers);
+    bg.querySelector('#cli-signin').innerHTML = signinLine(bg.querySelector('#cli-mode').value);
+  } });
+  bg.querySelector('#cli-signin')?.addEventListener('click', (e) => { if (e.target.closest('[data-gate]')) { e.preventDefault(); setUpPublik(); } });
 
   const getSeed = wireSeedSection(bg);
   const close = () => bg.remove();
@@ -113,6 +124,7 @@ export function openNewModal({ api, cfg = {}, onCreated }) {
 
   bg.querySelector('#launch-btn').addEventListener('click', async () => {
     errEl.textContent = '';
+    if (providers.find((p) => p.kind === bg.querySelector('#cli-mode')?.value)?.gate === 'setup') return setUpPublik();
     const btn = bg.querySelector('#launch-btn');
     const seed = getSeed();
     const orig = btn.textContent;

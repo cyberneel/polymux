@@ -406,12 +406,21 @@ auto-accepted on launch (see [POLYMUX_AUTO_TRUST](#configuration-env)).
   per-launch MCP flag).
 - **Publik** ([publikhq.com](https://publikhq.com), pay-as-you-go) — the normal `claude` CLI pointed
   at Polymux's `/publik/<session>/` route, which holds your key and forwards to Publik's
-  Anthropic-compatible API. Shown only once `~/.publik/key` exists (put your key there, mode 600).
-  Pick a tier in New Session: **Balanced** (default), **Fast** or **Smart**. The CLI gets a
+  Anthropic-compatible API. **No key to paste:** pick Publik in New Session (or on the welcome
+  screen) and click **Use Publik models**. You sign in with Publik in a browser tab, then **Get a
+  plan** / **Connect your plan**, or **Use my own key** to stay on your Claude login. Polymux gets
+  its own install key (`~/.config/publik/apps/polymux.json`, mode 600); a new install starts at
+  $0.00 and linking adds $0.05 once (a turn or two). **Change** next to Publik asks again. Key
+  order: `PUBLIK_API_KEY`, that install key, then `~/.publik/key` (Friday's Connect Publik, or by
+  hand). Nothing contacts Publik until someone opts in; after that, each start checks the sign-in
+  and sends usage counts (`app_opened`, then `active_session` every 30 min, no content). Turn them
+  off with `DO_NOT_TRACK=1` or `PUBLIK_TELEMETRY=off`. `PUBLIK_SELF_TEST=1 npm start` prints
+  Publik's self-test line and exits. Pick a tier in New Session: **Balanced** (default), **Fast**
+  or **Smart**. The CLI gets a
   per-session token, never the key. Publik sessions are Claude sessions to Polymux (status dots,
   History resume, notes), and the burn pill shows your Publik balance with a Top up link.
   Known gaps: no prompt caching, the model calls itself Claude Sonnet, server-side tools
-  (WebSearch/WebFetch) may fail, no per-session spend yet (Publik reports the charge only on
+  (WebSearch/WebFetch) may fail, requests are capped at 4 MB, no per-session spend yet (Publik reports the charge only on
   non-streamed replies; the wallet total is exact), and a restored session comes back on Balanced.
 
 Codex and agy launch clean and get the **CLI-agnostic** surface: the in-browser terminal, attach,
