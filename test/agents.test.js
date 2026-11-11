@@ -55,6 +55,13 @@ test('busy with only background work left reads idle once the turn ended', (t) =
   assert.equal(status(), 'idle'); // turn over, a background agent still running
   write({ type: 'system', subtype: 'turn_duration' }, { type: 'user' }); // its notification started a new turn
   assert.equal(status(), 'running');
+  // The snapshot's "busy" was read before the turn ended: that's the turn itself, not background.
+  const ended = (ms) => write({ type: 'assistant' }, { type: 'system', subtype: 'turn_duration', timestamp: new Date(ms).toISOString() });
+  agent[0].seenAt = Date.now();
+  ended(agent[0].seenAt + 1000);
+  assert.equal(status(), 'running');
+  ended(agent[0].seenAt - 10_000); // ended well before the snapshot: background work
+  assert.equal(status(), 'idle');
 });
 
 test('a prompt is answered by its option key, never a blind Enter', async () => {

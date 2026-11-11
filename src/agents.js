@@ -54,7 +54,12 @@ export function turnEnded(lines) {
 function busyInBackground(a) {
   if (a?.status !== 'busy' || !a.cwd || !a.sessionId) return false;
   const t = tail(join(homedir(), '.claude', 'projects', a.cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${a.sessionId}.jsonl`));
-  return !!t && turnEnded(t.lines) === true;
+  if (!t || turnEnded(t.lines) !== true) return false;
+  // getAgents is up to 10s old: a "busy" read before (or just as) the turn ended is that turn,
+  // not background work. Trust it only when the snapshot postdates the end (+3s for the CLI).
+  let end = NaN;
+  try { end = Date.parse(JSON.parse(t.lines.findLast((l) => l.includes('"subtype":"turn_duration"'))).timestamp); } catch { /* unknown → trust it */ }
+  return !(end > (a.seenAt ?? Infinity) - 3000);
 }
 // A file's last 32KB as lines; `whole` when that is all of it.
 export function tail(file) {
@@ -111,12 +116,13 @@ const PATH = `${dirname(process.execPath)}:${process.env.PATH || ''}`;
 // The exec takes ~0.7s, longer than the dashboard/terminal polls are apart, so it
 // runs behind swr: polls get the last result instantly (≤10s old), one exec at a time.
 export const getAgents = swr(async () => {
+  const seenAt = Date.now();
   try {
     const { stdout } = await exec('claude', ['agents', '--json'], {
       timeout: 12_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, PATH },
     });
     const parsed = JSON.parse(stdout);
-    if (Array.isArray(parsed)) return parsed; // background jobs kept: a parked pane maps to its job
+    if (Array.isArray(parsed)) return parsed.map((a) => ({ ...a, seenAt })); // background jobs kept: a parked pane maps to its job
   } catch { /* claude unavailable / older version — degrade gracefully */ }
   return [];
 }, 2500, 10_000);
