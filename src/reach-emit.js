@@ -5,7 +5,7 @@
 // Best-effort: if Friday is unreachable we drop the event (Friday's poll is the backstop).
 
 import { config } from './config.js';
-import { listSessions, capturePane, promptText } from './tmux.js';
+import { listSessions, capturePane, promptText, lastTyped } from './tmux.js';
 import { attachAgents, deckStatus } from './agents.js';
 import { apnsEnabled, pushAll } from './apns.js';
 
@@ -83,6 +83,9 @@ async function tick() {
     // Skip the first observation of a session (from===undefined) and no-change ticks;
     // only push real transitions once primed.
     if (!primed || from === undefined || from === to) continue;
+    // Typed into it within the minute: you're looking at it, and a dialog you opened yourself
+    // (/mcp) isn't the session asking you anything. Friday's poll already skips attached ones.
+    if (to === 'waiting_input' && Date.now() - await lastTyped(s.name).catch(() => 0) < 60_000) continue;
     if (to === 'waiting_input') asking.push(s);
     const ev = config.fridayReach.url && eventFor(s, from, to);
     // The dialog itself (command, question, options), so it's answerable from Friday unseen.

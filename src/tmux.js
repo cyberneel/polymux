@@ -483,6 +483,14 @@ export async function capturePane(name, lines = 24) {
   return out;
 }
 
+// When someone last typed into this session (ms; 0 = never). Web and iOS terminals are tmux
+// clients, and tmux bumps client_activity on their keys and attach, not on output.
+export async function lastTyped(name) {
+  assertManaged(name);
+  const out = await tmux(['list-clients', '-t', name, '-F', '#{client_activity}']).catch(() => '');
+  return Math.max(0, ...out.split('\n').map(Number).filter(Boolean)) * 1000;
+}
+
 // Create a new subdirectory `name` under `parent` (for the new-session picker).
 // `parent` must already exist under an allowed root; `name` must be a single,
 // safe path segment. Returns the absolute path of the (new or existing) folder.
