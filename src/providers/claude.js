@@ -2,6 +2,7 @@
 // how it launches/resumes/forks, its permission-mode flag, and the Polymux MCP +
 // shared-browser auto-wire (which uses Claude's --mcp-config / --append-system-prompt).
 import { mkdir, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { config } from '../config.js';
@@ -11,6 +12,9 @@ const RESUME_ID_RE = /^[0-9a-fA-F-]{36}$/;
 const TURN_HOOKS_PATH = join(homedir(), '.claude', 'cc-deck', 'turn-hooks.json');
 const SESSION_MCP_PATH = join(homedir(), '.claude', 'cc-deck', 'session-mcp.json');
 const BROWSER_MCP_PATH = join(homedir(), '.claude', 'cc-deck', 'browser-mcp.json');
+// Friday's Connect Claude: a 1-year token, synced here (server.js CRED_FILES). It never refreshes,
+// so sessions here and Friday share it without logging each other out.
+const TOKEN_PATH = join(process.env.HOME || homedir(), '.claude', '.oauth-token');
 // Pin the shared-browser MCP (was `@latest`): `npx …@latest` re-resolves over the
 // network on every session boot and can blow the 30s MCP connect timeout. A pinned
 // version resolves from disk instantly when pre-installed (the Docker image and the
@@ -32,6 +36,11 @@ export const claude = {
   // detects it; `yes` matches the "Yes, I trust" menu line (its position/numbering
   // varies by version — often "No" is even the default — so we navigate to it).
   trust: { re: /do you trust|created or one you trust|trust (this|the) (folder|files|project|directory)|yes, i trust this folder/i, yes: /\byes\b/i },
+
+  // The shell reads the token at launch, so it never shows in the pane or the shell history.
+  launchEnv() {
+    return existsSync(TOKEN_PATH) ? `CLAUDE_CODE_OAUTH_TOKEN="$(cat '${TOKEN_PATH}')" ` : '';
+  },
 
   // Post-command launch args: resume/fork by id + the configured permission mode.
   launchArgs({ resume, fork }) {

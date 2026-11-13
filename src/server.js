@@ -215,7 +215,7 @@ app.post('/api/turn-hook', async (req, reply) => {
 // older copy is dead), list the ones we want, and delete the ones the account disconnected. A
 // login made by hand here that Friday doesn't hold is never touched. Only these files ever move.
 const CRED_FILES = {
-  claude: ['.claude/.credentials.json'],
+  claude: ['.claude/.credentials.json', '.claude/.oauth-token'], // + Friday's Connect Claude token
   codex: ['.codex/auth.json'],
   agy: ['.gemini/antigravity-cli/antigravity-oauth-token', '.gemini/oauth_creds.json'],
   publik: ['.publik/key'], // Friday's Connect Publik
