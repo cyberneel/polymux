@@ -29,7 +29,7 @@
 /* The top bars are black in both modes: re-point the tokens and everything inside inverts. */
 .topbar, .term-bar {
   --bg: #000; --fg: #fff; --muted: #a3a3a3; --line: #5c5c5c; --hair: #333; --surface: #1a1a1a;
-  --red: #f04a5e; --green: #4cc276; --amber: #e0a32e; --accent: #c990da;
+  --red: #f04a5e; --green: #4cc276; --amber: #e0a32e; --accent: var(--look-accent, #c990da); /* the hub's look */
   color: var(--fg);
 }
 

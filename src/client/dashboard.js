@@ -17,6 +17,19 @@ styleEl.textContent = css;
 document.head.appendChild(styleEl);
 
 const app = document.getElementById('app');
+// Inside the FridayOS hub: the hub passes on Friday's look (LookMsg v1, friday design 4.4). Its mode holds for this
+// page only (the saved pick stays); its colours apply when the user has their own palette, its font always.
+// Only the parent counts; frame-ancestors decides who that can be. ponytail: radius and density not mapped yet.
+if (parent !== window) addEventListener('message', (e) => {
+  const d = e.data, c = d && d.colors, el = document.documentElement, S = el.style;
+  if (e.source !== parent || !d || d.hub !== 'look' || d.v !== 1 || (d.mode !== 'light' && d.mode !== 'dark')) return;
+  const M = { bg: '--bg', surface: '--surface', text: '--fg', muted: '--muted', border: '--hair', accent: '--accent' };
+  el.dataset.theme = d.mode;
+  Object.values(M).concat('--sans', '--look-accent').forEach((v) => S.removeProperty(v));
+  if (c && Object.keys(M).every((k) => /^#[0-9a-f]{6}$/i.test(c[k]))) for (const k in M) S.setProperty(M[k], c[k]);
+  if (S.getPropertyValue('--accent')) S.setProperty('--look-accent', c.accent); // the black top bar too
+  if (typeof d.font === 'string' && /^[\w\s",.-]{1,200}$/.test(d.font)) S.setProperty('--sans', d.font);
+});
 let view = localStorage.getItem('ccdeck.view') || 'grid'; // grid | list | group
 let tab = localStorage.getItem('ccdeck.tab') || 'active'; // active | history | usage
 let query = '';
