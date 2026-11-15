@@ -25,7 +25,11 @@ const readKey = async () => {
   const c = gate?.prior === 'publik' && readCredential(); // mid-Change: live sessions keep working
   if (c) return { apiKey: c.key, baseURL: c.base_url || DEFAULT_BASE_URL };
   const k = await readFile(keyPath(), 'utf8').then((x) => x.trim(), () => '');
-  return k ? { apiKey: k, baseURL: DEFAULT_BASE_URL } : null;
+  if (!k) return null;
+  // Friday syncs its Publik credential along with the key: a hosted tenant's key is billed through
+  // the systems sponsor proxy, so it has to go to that base_url.
+  const f = await readFile(join(process.env.HOME || homedir(), '.config/publik/apps/fridayos.json'), 'utf8').then(JSON.parse, () => null);
+  return { apiKey: k, baseURL: (f?.key === k && f.base_url) || DEFAULT_BASE_URL };
 };
 export const connected = async () => !!(await readKey());
 // This build can offer "Use Publik models" (it carries an app token).

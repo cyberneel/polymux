@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { shownName, matchAgents, deckStatus } from '../src/agents.js';
+import { shownName, matchAgents, deckStatus, outOfUsage } from '../src/agents.js';
 
 test('shownName strips Claude status glyphs from the pane title', () => {
   assert.equal(shownName('✳ Friday (ctx)'), 'Friday (ctx)');
@@ -127,4 +127,49 @@ test('a Codex/agy session gets its id, busy/idle and conversation from the trans
   assert.equal(agy.turnEnded(L([...steps, { type: 'PLANNER_RESPONSE', content: 'Hello.' }])), true);
   assert.deepEqual(agy.messages(L([...steps, { type: 'PLANNER_RESPONSE', content: 'Hello.' }])), [{ role: 'user', text: 'hi' }, { role: 'assistant', text: 'Hello.' }]);
   assert.equal(agy.transcriptOf(`/h/.gemini/antigravity-cli/conversations/${id}.db-wal`).file, `/h/.gemini/antigravity-cli/brain/${id}/.system_generated/logs/transcript.jsonl`);
+});
+
+test('a session whose last turn hit the account limit reads out of usage, until the next prompt', async () => {
+  const L = (...a) => a.map((x) => JSON.stringify(x));
+  const err = (error, apiErrorStatus, text) => ({ type: 'assistant', isApiErrorMessage: true, error, apiErrorStatus, message: { model: '<synthetic>', content: [{ type: 'text', text }] } });
+  const user = { type: 'user', message: { content: 'go on' } };
+  assert.equal(outOfUsage(L(user, err('rate_limit', 429, "You've hit your weekly limit · resets 5pm"), { type: 'system', subtype: 'turn_duration' })), 'limit');
+  assert.equal(outOfUsage(L(user, err('rate_limit', 429, "You've hit your session limit · resets 2am"))), 'limit');
+  assert.equal(outOfUsage(L(user, err('invalid_request', 402, 'Insufficient balance'))), 'limit'); // Publik out of credit
+  assert.equal(outOfUsage(L(user, err('authentication_failed', 401, 'Login expired · Please run /login'))), 'login');
+  assert.equal(outOfUsage(L(user, err('rate_limit', 429, 'API Error: Server is temporarily limiting requests (not your usage limit) · Rate limited'))), null);
+  assert.equal(outOfUsage(L(user, err('server_error', 500, 'API Error: 500'))), null);
+  // A local command after the error (/model) doesn't clear it; a real prompt does.
+  const local = [{ type: 'user', message: { content: '<command-name>/model</command-name>' } }, { type: 'assistant', message: { model: '<synthetic>', content: [{ type: 'text', text: 'Set model' }] } }];
+  assert.equal(outOfUsage(L(err('rate_limit', 429, "You've hit your weekly limit"), ...local)), 'limit');
+  assert.equal(outOfUsage(L(err('rate_limit', 429, "You've hit your weekly limit"), user)), null);
+  assert.equal(outOfUsage(L(user, { type: 'assistant', message: { model: 'claude-opus-5-5', content: [] } })), null);
+
+  // matchAgents reads it off an idle session's transcript.
+  const home = mkdtempSync(join(tmpdir(), 'ccdeck-agents-')), prevHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    mkdirSync(join(home, '.claude', 'projects', '-w'), { recursive: true });
+    writeFileSync(join(home, '.claude', 'projects', '-w', 'sid-2.jsonl'), L(user, err('rate_limit', 429, "You've hit your weekly limit")).join('\n') + '\n');
+    const s = (status) => matchAgents([{ name: 'ccdeck-o', dir: '/w', paneCommand: 'claude' }], [{ kind: 'interactive', pid: 1, cwd: '/w', sessionId: 'sid-2', status }])[0].outOfUsage;
+    assert.equal(s('idle'), 'limit');
+    assert.equal(s('busy'), null);
+  } finally { process.env.HOME = prevHome; }
+
+  const { codex } = await import('../src/providers/codex.js');
+  const ev = (payload) => JSON.stringify({ type: 'event_msg', payload });
+  assert.equal(codex.outOfUsage([ev({ type: 'task_started' }), ev({ type: 'error', message: "You've hit your usage limit. Try again later." }), ev({ type: 'task_complete' })]), 'limit');
+  assert.equal(codex.outOfUsage([ev({ type: 'error', message: 'You have hit your usage limit' }), ev({ type: 'task_started' })]), null);
+
+  const { agy } = await import('../src/providers/agy.js');
+  const st = (type, content, x) => JSON.stringify({ type, content, ...x });
+  const quota = st('ERROR_MESSAGE', 'Error: RESOURCE_EXHAUSTED: quota exceeded');
+  assert.equal(agy.turnEnded([st('USER_INPUT', 'hi'), quota]), true);
+  assert.equal(agy.outOfUsage([st('USER_INPUT', 'hi'), quota]), 'limit');
+  assert.equal(agy.outOfUsage([st('ERROR_MESSAGE', 'Error: please sign in again')]), 'login');
+  const drop = st('ERROR_MESSAGE', 'Error: The stream was interrupted. Please continue the task you were working on.');
+  assert.equal(agy.turnEnded([st('USER_INPUT', 'hi'), drop]), false); // agy retries a dropped stream
+  assert.equal(agy.outOfUsage([quota, st('PLANNER_RESPONSE', 'ok')]), null);
+  assert.equal(agy.turnEnded([st('PLANNER_RESPONSE', 'x', { tool_calls: [{}] })]), false);
+  assert.equal(agy.turnEnded([]), null);
 });

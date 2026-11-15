@@ -7,7 +7,7 @@ import css from './styles.css';
 import { registerServiceWorker, applyUpdate } from './swreg.js';
 import { openShare } from './graph.js';
 import { openNotes } from './notes.js';
-import { openNewModal as openNewModalShared } from './newsession.js';
+import { openNewModal as openNewModalShared, continueTargets } from './newsession.js';
 import { pickFiles, sendFiles, toast } from './upload.js';
 import { fetchBurn, renderBurnPill, openBurnPopover } from './burnpill.js';
 
@@ -59,6 +59,7 @@ document.body.innerHTML = `
         <a href="/">Dashboard</a>
         <h1 class="title" id="title">${esc(currentSession || 'session')}</h1>
         <button id="main-btn" class="burn-pill" style="display:none">Back to main</button>
+        <span id="cont-btns"></span>
         <div class="spacer" style="flex:1"></div>
         <button id="notes-btn" class="icon" title="Updates from outside chats" style="display:none"></button>
         <button id="burn-btn" class="burn-pill" title="Usage limits (ccburn)" style="display:none"></button>
@@ -79,11 +80,28 @@ const titleEl = document.getElementById('title');
 // Shown when this pane is on a background job (summary-seeded) instead of its full-context
 // main conversation; one click swaps the pane for main.
 const mainBtn = document.getElementById('main-btn');
+// Out of usage: one button per other connected engine (POST /continue).
+const contEl = document.getElementById('cont-btns');
+let providers = null;
 function renderParked() {
-  const p = sessions.find((s) => s.name === currentSession)?.parked;
+  const s = sessions.find((x) => x.name === currentSession), p = s?.parked;
   mainBtn.style.display = p ? '' : 'none';
   if (p) mainBtn.title = `On background job${p.jobName ? ` “${p.jobName}”` : ''} (summary-only context). Go back to your full-context main conversation.`;
+  if (s?.outOfUsage && !providers) { providers = []; api('/api/config').then((c) => { providers = c.providers || []; renderParked(); }, () => { providers = null; }); }
+  contEl.innerHTML = continueTargets(s, providers).map((t) => `<button class="burn-pill" data-kind="${esc(t.kind)}">Continue on ${esc(t.label)}</button>`).join('');
 }
+contEl.addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  b.disabled = true;
+  try {
+    const old = currentSession;
+    const { name } = await api(`/api/sessions/${encodeURIComponent(old)}/continue`, { method: 'POST', body: JSON.stringify({ kind: b.dataset.kind }) });
+    switchTo(name);
+    disposePane(old);
+    await refreshSessions();
+  } catch (err) { b.disabled = false; toast(err.message, { kind: 'error' }); }
+});
 mainBtn.addEventListener('click', async () => {
   const old = currentSession;
   try {

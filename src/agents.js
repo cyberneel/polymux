@@ -37,12 +37,13 @@ export function shownName(title) {
 // So is a local command (/model, /rename): its user lines start no turn, and the CLI's own
 // <synthetic> reply. A turn the user interrupted writes no turn_duration but is over. null = no
 // turn in sight.
+const localLine = (d) => d.type === 'user' && (d.isMeta || /^\s*<(command-name|local-command-)/.test(typeof d.message?.content === 'string' ? d.message.content : ''));
 export function turnEnded(lines) {
   for (let i = lines.length - 1; i >= 0; i--) {
     let d;
     try { d = JSON.parse(lines[i]); } catch { continue; }
     const c = d.message?.content;
-    if (d.type === 'user' && (d.isMeta || (typeof c === 'string' && /^\s*<(command-name|local-command-)/.test(c)))) continue;
+    if (localLine(d)) continue;
     if (d.type === 'assistant' && d.message?.model === '<synthetic>') continue;
     if (d.type === 'user' && Array.isArray(c) && c.some((x) => x?.text?.startsWith('[Request interrupted by user'))) return true;
     if (d.type === 'user' || d.type === 'assistant') return false;
@@ -50,10 +51,29 @@ export function turnEnded(lines) {
   }
   return null;
 }
+// Did the last turn fail on the account? 'limit' (out of usage or credit), 'login', or null.
+// The CLI writes the API error as a <synthetic> assistant line; the next real prompt clears it.
+// "Server is temporarily limiting requests (not your usage limit)" is a 429 too, and is not this.
+export function outOfUsage(lines) {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let d;
+    try { d = JSON.parse(lines[i]); } catch { continue; }
+    if (localLine(d)) continue;
+    if (d.type === 'assistant' && d.isApiErrorMessage) {
+      const text = [].concat(d.message?.content || []).map((x) => x?.text || '').join(' ');
+      if (d.error === 'authentication_failed') return 'login';
+      return d.apiErrorStatus === 402 || d.error === 'billing_error' || (d.error === 'rate_limit' && /hit your .*limit/i.test(text)) ? 'limit' : null;
+    }
+    if (d.type === 'assistant' && d.message?.model === '<synthetic>') continue;
+    if (d.type === 'user' || d.type === 'assistant') return null;
+  }
+  return null;
+}
+const claudeFile = (a) => join(homedir(), '.claude', 'projects', a.cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${a.sessionId}.jsonl`);
 // ponytail: reads the last 32KB per busy session per poll; cache on mtime if that ever shows up.
 function busyInBackground(a) {
   if (a?.status !== 'busy' || !a.cwd || !a.sessionId) return false;
-  const t = tail(join(homedir(), '.claude', 'projects', a.cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${a.sessionId}.jsonl`));
+  const t = tail(claudeFile(a));
   if (!t || turnEnded(t.lines) !== true) return false;
   // getAgents is up to 10s old: a "busy" read before (or just as) the turn ended is that turn,
   // not background work. Trust it only when the snapshot postdates the end (+3s for the CLI).
@@ -97,7 +117,8 @@ function assignCli(s) {
   const ended = tl ? getProvider(s.kind).turnEnded(tl.lines) : null;
   // No turn marker in the last 32KB: a long turn's output, unless that is the whole file (no turn yet).
   const busy = ended === null ? !!tl && !tl.whole : !ended;
-  Object.assign(s, { liveSessionId: t?.id || null, claudeStatus: t ? (busy ? 'busy' : 'idle') : null, waitingFor: null, background: false, transcript: t?.file || null });
+  const out = tl && !busy ? getProvider(s.kind).outOfUsage?.(tl.lines) : null;
+  Object.assign(s, { liveSessionId: t?.id || null, claudeStatus: t ? (busy ? 'busy' : 'idle') : null, waitingFor: null, background: false, transcript: t?.file || null, outOfUsage: out || null });
 }
 // The deck status Friday sees (list_sessions, reach-emit).
 export function deckStatus(s) {
@@ -130,8 +151,7 @@ export const getAgents = swr(async () => {
 // matchAgents with a fresh `claude agents`, only when a Claude session can use it: the exec
 // costs ~0.8 CPU-s, which on a run every 15s was a tenant VM's whole idle floor.
 export async function attachAgents(sessions) {
-  if (sessions.some((s) => runsClaude(s.kind))) matchAgents(sessions, await getAgents());
-  return sessions;
+  return matchAgents(sessions, sessions.some((s) => runsClaude(s.kind)) ? await getAgents() : []);
 }
 
 // Attach each Polymux session's live Claude status by matching it to an agent.
@@ -150,7 +170,10 @@ export function matchAgents(sessions, all) {
   const take = (pred) => { const a = agents.find((x) => !used.has(x) && pred(x)); if (a) used.add(a); return a; };
   // `background`: busy only with delegated work (see busyInBackground). claudeStatus stays
   // "busy" so slots never close it.
-  const assign = (s, a) => { s.liveSessionId = a?.sessionId || null; s.claudeStatus = a?.status || null; s.waitingFor = a?.waitingFor || null; s.background = busyInBackground(a); };
+  const assign = (s, a) => {
+    s.liveSessionId = a?.sessionId || null; s.claudeStatus = a?.status || null; s.waitingFor = a?.waitingFor || null; s.background = busyInBackground(a);
+    s.outOfUsage = a?.status === 'idle' && a.cwd && a.sessionId ? outOfUsage(tail(claudeFile(a))?.lines || []) : null;
+  };
   const pending = [];
   for (const s of sessions) {
     if (!runsClaude(s.kind)) { assignCli(s); continue; } // never borrows a Claude agent by cwd

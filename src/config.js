@@ -1,6 +1,6 @@
 import { resolve, join, dirname } from 'node:path';
 import { homedir } from 'node:os';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHmac } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import dotenv from 'dotenv';
 
@@ -160,3 +160,5 @@ if (!config.secret) {
     console.warn(`[polymux] POLYMUX_SECRET is not set: generated one and saved it to ${file}.`);
   }
 }
+// Session MCP on without a read-only token set (hosted decks): derive one, stable across restarts.
+if (config.sessionMcp && !config.mcpTokenReadonly) config.mcpTokenReadonly = createHmac('sha256', config.secret).update('mcp-readonly').digest('hex');

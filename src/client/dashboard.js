@@ -2,7 +2,7 @@ import './dialogs.js';
 import css from './styles.css';
 import { registerServiceWorker, applyUpdate } from './swreg.js';
 import { openGraph } from './graph.js';
-import { openNewModal as openNewModalShared } from './newsession.js';
+import { openNewModal as openNewModalShared, continueTargets } from './newsession.js';
 import { openStorage } from './storage.js';
 import { renderFiles } from './files.js';
 import { toast } from './upload.js';
@@ -148,6 +148,7 @@ function isLive(s) {
 }
 // Derive a friendly status from Claude's reported state (claude agents --json).
 function statusOf(s) {
+  if (s.outOfUsage) return { text: s.outOfUsage === 'login' ? 'signed out' : 'out of usage', cls: 'attn' };
   if (s.waitingFor) return { text: /perm/i.test(s.waitingFor) ? 'needs permission' : 'needs you', cls: 'attn' };
   if (s.claudeStatus === 'busy') return { text: 'working', cls: 'live' };
   if (s.claudeStatus === 'idle') return { text: 'ready', cls: 'ready' };
@@ -502,6 +503,14 @@ function wireActiveCards(container) {
         location.href = `/terminal.html?session=${encodeURIComponent(r.name)}`;
       } catch (err) { toast(err.message, { kind: 'error' }); }
     });
+    el.querySelectorAll('.cont-btn').forEach((b) => b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      b.disabled = true;
+      try {
+        const r = await api(`/api/sessions/${name}/continue`, { method: 'POST', body: JSON.stringify({ kind: b.dataset.kind }) });
+        location.href = `/terminal.html?session=${encodeURIComponent(r.name)}`;
+      } catch (err) { b.disabled = false; toast(err.message, { kind: 'error' }); }
+    }));
     el.querySelector('.graph-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
       const b = e.currentTarget;
@@ -541,6 +550,7 @@ function cardHtml(s) {
       <span class="faint">${s.attached ? 'attached, ' : ''}${fmtTime(s.lastActivity)}</span>
       <div class="spacer"></div>
       ${s.parked ? `<button class="burn-pill main-btn" title="${esc(parkedTip(s))}">Back to main</button>` : ''}
+      ${continueTargets(s, cfg.providers).map((p) => `<button class="burn-pill cont-btn" data-kind="${esc(p.kind)}">Continue on ${esc(p.label)}</button>`).join('')}
       ${s.noteCount ? `<button class="icon note-btn" title="${s.noteCount} update(s) from outside chats. View or apply them." data-note="${esc(s.name)}" data-live="${esc(s.liveSessionId || '')}">${s.noteCount} note${s.noteCount === 1 ? '' : 's'}</button>` : ''}
       ${s.liveSessionId ? `<button class="icon graph-btn" title="Deep Session graph" data-graph="${esc(s.liveSessionId)}" data-cwd="${esc(s.dir || '')}" data-gtitle="${esc(s.title)}">Graph</button>` : ''}
       <button class="icon rename-btn" title="Rename Deep Session">Rename</button>

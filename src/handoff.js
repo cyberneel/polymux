@@ -60,7 +60,7 @@ async function renderSource({ sourceId, cwd, uuid, scope }) {
   if (!messages.length) return { title, body: '_(no messages)_' };
   if (scope === 'summary') {
     const text = messages.map((m) => `${m.role === 'user' ? 'User' : 'Claude'}: ${m.text}`).join('\n\n').slice(0, 120_000);
-    return { title, body: await summarize(text) };
+    return { title, body: await summarize(text).catch(() => text) }; // no Claude (out of usage, not installed): the thread itself
   }
   return { title, body: messages.map((m) => `**${m.role === 'user' ? 'User' : 'Claude'}:** ${m.text}`).join('\n\n') };
 }
@@ -134,6 +134,6 @@ export async function runHandoff(opts) {
   if (!dir) throw err(400, 'no target directory for the new session');
   const seedP = buildHandoffFile(opts).then((built) => seedNote(built.file));
   seedP.catch(() => {}); // scheduleBoot awaits + handles the real failure; this silences the pre-await window
-  const name = await createSession({ dir, title: opts.title ? `${opts.title} (ctx)` : undefined, seed: seedP, browser: opts.browser });
+  const name = await createSession({ dir, title: opts.title ? `${opts.title} (ctx)` : undefined, seed: seedP, browser: opts.browser, kind: opts.kind });
   return { dest: 'new', name, pending: true };
 }

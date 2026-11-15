@@ -50,14 +50,14 @@ export const agy = {
     const id = m && (m[2] || m[3]);
     return id && ID_RE.test(id) ? { id, file: join(m[1], 'brain', id, '.system_generated', 'logs', 'transcript.jsonl') } : null;
   },
-  // A turn ends on a model response that calls no tool; anything after it means a new one started.
+  // A turn ends on a model response that calls no tool, or on an account error; anything after
+  // it means a new one started.
   turnEnded(lines) {
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const d = rec(lines[i]);
-      if (d) return d.type === 'PLANNER_RESPONSE' && !d.tool_calls?.length;
-    }
-    return null;
+    const d = last(lines);
+    return d && ((d.type === 'PLANNER_RESPONSE' && !d.tool_calls?.length) || !!usageErr(d));
   },
+  // 'limit' or 'login' when the last turn stopped on the account (see agents.js outOfUsage).
+  outOfUsage: (lines) => usageErr(last(lines)),
   messages(lines) {
     return lines.map(rec).filter((d) => d?.content && (d.type === 'USER_INPUT' || d.type === 'PLANNER_RESPONSE'))
       .map((d) => d.type === 'USER_INPUT'
@@ -66,6 +66,12 @@ export const agy = {
   },
 };
 const rec = (l) => { try { return JSON.parse(l); } catch { return null; } };
+const last = (lines) => { for (let i = lines.length - 1; i >= 0; i--) { const d = rec(lines[i]); if (d) return d; } return null; };
+// agy logs a failed call as an ERROR_MESSAGE step ("Error: ..."); a stream drop is one too, and retries.
+// ponytail: quota/sign-in wording guessed from Gemini's API errors, none seen in a real transcript yet.
+const usageErr = (d) => d?.type !== 'ERROR_MESSAGE' ? null
+  : /quota|RESOURCE_EXHAUSTED|usage limit|credits|\b429\b/i.test(d.content) ? 'limit'
+  : /sign in|log ?in|unauthenticated|\b401\b/i.test(d.content) ? 'login' : null;
 
 // Register (idempotently) the read-only Polymux MCP with agy, so every agy session
 // gets the handoff-aware toolset. agy has no per-launch MCP flag, so this persists

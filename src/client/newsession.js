@@ -152,3 +152,6 @@ export function openNewModal({ api, cfg = {}, onCreated }) {
     }
   });
 }
+
+// Engines a session that ran out can continue on: the other connected ones.
+export const continueTargets = (s, providers) => (s?.outOfUsage && providers || []).filter((p) => p.kind !== (s.kind || 'claude') && p.gate !== 'setup');

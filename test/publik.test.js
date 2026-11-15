@@ -1,6 +1,6 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -53,6 +53,19 @@ test('route: per-session token, key from ~/.publik/key, folded body', async () =
   const fwd = JSON.parse(sent[0].o.body);
   assert.equal(fwd.model, 'publik-fast');
   assert.deepEqual(fwd.system, [{ type: 'text', text: 'env' }]);
+
+  // Friday's synced credential routes its key through the systems sponsor proxy; another key's doesn't.
+  const cred = join(home, '.config', 'publik', 'apps', 'fridayos.json');
+  mkdirSync(join(home, '.config', 'publik', 'apps'), { recursive: true });
+  const urls = [];
+  mock.method(globalThis, 'fetch', async (url) => { urls.push(String(url)); return new Response('{}', { status: 200 }); });
+  writeFileSync(cred, JSON.stringify({ key: 'pk_test_x', base_url: 'https://sys.test/api/publik/v1' }));
+  await call(sessionToken('pm-a'));
+  writeFileSync(cred, JSON.stringify({ key: 'pk_other', base_url: 'https://sys.test/api/publik/v1' }));
+  await call(sessionToken('pm-a'));
+  mock.restoreAll();
+  rmSync(cred);
+  assert.deepEqual(urls, ['https://sys.test/api/publik/v1/messages?beta=true', 'https://publik.test/api/v1/messages?beta=true']);
 });
 
 test('Use Publik models: the gate from the browser, then the install key wins; Change can be cancelled', async () => {

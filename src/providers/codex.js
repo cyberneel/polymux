@@ -48,6 +48,16 @@ export const codex = {
     }
     return null;
   },
+  // 'limit' when the last turn stopped on the account's usage limit (see agents.js outOfUsage).
+  // ponytail: shape and wording from codex's error event, not yet seen in a real rollout; check one.
+  outOfUsage(lines) {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const d = rec(lines[i]), p = d?.type === 'event_msg' && d.payload;
+      if (p?.type === 'task_started') return null;
+      if (p?.type === 'error') return /usage limit|quota|credits/i.test(p.message || '') ? 'limit' : null;
+    }
+    return null;
+  },
   // What was said, minus the context codex injects as user messages (<environment_context>, AGENTS.md).
   messages(lines) {
     return lines.map(rec).filter((d) => d?.type === 'response_item' && d.payload?.type === 'message' && /^(user|assistant)$/.test(d.payload.role))

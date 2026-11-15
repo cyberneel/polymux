@@ -35,7 +35,7 @@ import { listHistory, claudeLiveMeta } from './history.js';
 import { buildGraph, buildThread } from './graph.js';
 import { runHandoff } from './handoff.js';
 import { listArtifacts, deleteArtifacts } from './storage.js';
-import { createMcpServer } from './mcp.js';
+import { createMcpServer, setFridayLink } from './mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import * as oauth from './oauth.js';
 import { consumeNotesSeed, consumeNotesSeedMany, pendingCounts, readPending, readPendingMany, countNotes, deleteNote, editNote } from './notes.js';
@@ -69,7 +69,7 @@ async function enrichedSessions() {
 import { getBurn } from './burn.js';
 import { startUpdateChecks, updateBehind, ROOT } from './update.js';
 import { listRemoteSessions } from './remote.js';
-import { availableProviders } from './providers/index.js';
+import { availableProviders, getProvider, runsClaude } from './providers/index.js';
 import { registerAgyMcp, registerAgyHooks } from './providers/agy.js';
 import { getUsage } from './usage.js';
 import { registerPublikRoute, getWallet, runGate } from './publik.js';
@@ -218,7 +218,7 @@ const CRED_FILES = {
   claude: ['.claude/.credentials.json', '.claude/.oauth-token'], // + Friday's Connect Claude token
   codex: ['.codex/auth.json'],
   agy: ['.gemini/antigravity-cli/antigravity-oauth-token', '.gemini/oauth_creds.json'],
-  publik: ['.publik/key'], // Friday's Connect Publik
+  publik: ['.publik/key', '.config/publik/apps/fridayos.json'], // Friday's Connect Publik + its base_url
 };
 const credDest = (rel) => Object.values(CRED_FILES).flat().includes(rel) ? join(process.env.HOME || homedir(), rel) : null;
 const mtimeOf = async (p) => Math.floor((await stat(p).catch(() => null))?.mtimeMs || 0);
@@ -238,6 +238,7 @@ app.post('/api/creds/sync', async (req, reply) => {
   if (!mcpIsStatic(req)) return reply.code(401).send({ error: 'unauthorized' });
   const theirs = req.body?.mtimes;
   if (!theirs || typeof theirs !== 'object') return reply.code(400).send({ error: 'no mtimes' });
+  await setFridayLink(req.body?.friday).catch(() => {});
   for (const rel of Array.isArray(req.body?.remove) ? req.body.remove : []) {
     const dest = credDest(rel);
     if (dest && !(rel in theirs)) await rm(dest, { force: true });
@@ -411,6 +412,29 @@ app.post('/api/sessions/:name/main', async (req, reply) => {
     await killSession(s.name); // before resuming, so two processes never share main
     const name = await createSession({ dir: s.dir, title: s.title, resume: s.parked.main, kind: s.kind, origin: s.origin });
     return { name };
+  } catch (err) {
+    return reply.code(err.statusCode || 500).send({ error: err.message });
+  }
+});
+
+// Continue a session on another connected engine, after its own ran out. Claude and Publik share
+// a transcript, so that switch resumes the same conversation in place. Any other pair starts a new
+// session seeded with the old one's context; the old one stays open.
+app.post('/api/sessions/:name/continue', async (req, reply) => {
+  try {
+    const kind = req.body?.kind;
+    const s = (await enrichedSessions()).find((x) => x.name === req.params.name);
+    if (!s?.liveSessionId) return reply.code(409).send({ error: 'This session has no conversation to continue' });
+    const from = s.kind || 'claude';
+    if (kind === from || !(await availableProviders()).some((p) => p.kind === kind && p.gate !== 'setup')) return reply.code(400).send({ error: 'Pick another connected engine' });
+    if (runsClaude(from) && runsClaude(kind)) {
+      await killSession(s.name); // before resuming, so two processes never share the conversation
+      return { name: await createSession({ dir: s.dir, title: s.title, resume: s.liveSessionId, kind, origin: s.origin }) };
+    }
+    if (runsClaude(from)) return await runHandoff({ dest: 'new', sourceId: s.liveSessionId, cwd: s.dir, scope: 'thread', title: s.title, kind });
+    // ponytail: codex/agy hand over their raw transcript path; render it like Claude's if the next CLI struggles.
+    const seed = `I'm continuing a ${getProvider(from).label} session that stopped. Read the end of its transcript, ${s.transcript}, then confirm the goal and current state in one line.`;
+    return { name: await createSession({ dir: s.dir, title: `${s.title} (ctx)`, seed, kind, origin: s.origin }) };
   } catch (err) {
     return reply.code(err.statusCode || 500).send({ error: err.message });
   }

@@ -4,6 +4,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { readdir, readFile, stat, mkdir, writeFile, open } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { execFile } from 'node:child_process';
@@ -346,6 +347,32 @@ async function getContext(sessionId, format, maxChars, allowStale = false) {
 
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
 
+// Friday's ask_friday, forwarded: a hosted Friday hands the deck its MCP url + bearer on each cred
+// sync (server.js), so every session, whatever its engine, can ask Friday with no per-engine wiring.
+// Ask only: friday_decide stays with the user in Friday, so no session approves its own proposal.
+const FRIDAY_LINK = join(homedir(), '.claude', 'cc-deck', 'friday-link.json');
+let fridayLink = null;
+try { fridayLink = JSON.parse(readFileSync(FRIDAY_LINK, 'utf8')); } catch { /* not linked */ }
+export async function setFridayLink(l) {
+  if (typeof l?.url !== 'string' || !/^https?:\/\//.test(l.url) || typeof l.token !== 'string' || !l.token) return;
+  if (fridayLink?.url === l.url && fridayLink.token === l.token) return;
+  fridayLink = { url: l.url, token: l.token };
+  await mkdir(dirname(FRIDAY_LINK), { recursive: true });
+  await writeFile(FRIDAY_LINK, JSON.stringify(fridayLink), { mode: 0o600 });
+}
+async function askFriday(args) {
+  try {
+    const r = await fetch(fridayLink.url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${fridayLink.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ask_friday', arguments: args } }),
+      signal: AbortSignal.timeout(600_000), // a Friday turn can run for minutes
+    });
+    const j = r.ok ? await r.json() : {};
+    return j.result || text(`Friday couldn't answer (${j.error?.message || `HTTP ${r.status}`}).`);
+  } catch (e) { return text(`Friday is unreachable: ${e.message}`); }
+}
+
 // `caller`: the Polymux session (tmux name) on the other end, '' for an outside chat or Friday.
 export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
   const server = new McpServer({ name: 'polymux', version: '1.0.0' });
@@ -424,7 +451,8 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
     description:
       "List the user's currently ACTIVE Deep Sessions (Claude Code) with live, structured status — for detecting state transitions (a Deep Session finishing, waiting for the user, or exiting). " +
       'Returns a JSON array; poll and diff the `status`/`needs_input` fields to notice transitions. Each item: ' +
-      '{ session_id, name, title, dir, status, needs_input, waiting_for, background, attached, last_activity, pending_notes }. ' +
+      '{ session_id, name, title, dir, status, needs_input, waiting_for, background, attached, last_activity, pending_notes, out_of_usage }. ' +
+      "`out_of_usage` = its last turn stopped on the account: 'limit' (out of usage or credit) or 'login' (signed out); else null. " +
       '`background` = idle at its prompt, but agents it started are still working (more rounds will follow). ' +
       '`pending_notes` counts saved notes (save_session_summary) not yet delivered — read them with pending_notes, deliver with apply_notes. ' +
       "`status` is one of: running (Claude is working), waiting_input (blocked on the user — a prompt/permission/question), idle (at its prompt, not working), done (Claude exited, the shell remains), queued (the deck is at its session limit; it starts when a slot opens). " +
@@ -450,6 +478,7 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
         // seeded looked untouched until the user opened it, and its finished reply never relayed.
         last_activity: s.lastActivity || s.outputAt ? new Date(Math.max(s.lastActivity || 0, s.outputAt || 0)).toISOString() : null,
         pending_notes: countNotes(notes, [s.liveSessionId, s.resumedFrom]),
+        out_of_usage: s.outOfUsage || null,
       };
     });
     // Starts waiting for a slot (the deck is at POLYMUX_MAX_SESSIONS).
@@ -501,6 +530,18 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
       description: 'Free a tab you previously claimed (call when done, then close it with chrome close_page). Identify by target_id or url.',
       inputSchema: { target_id: z.string().optional(), url: z.string().optional() },
     }, async ({ target_id, url }) => { try { return text(JSON.stringify(await releaseTab({ target_id, url }))); } catch (e) { return text('Could not release: ' + e.message); } });
+  }
+
+  // Not for Friday itself (the static bearer).
+  if (!sessionControl && fridayLink) {
+    server.registerTool('ask_friday', {
+      title: 'Ask Friday',
+      description: "Ask Friday, the user's assistant, about their tasks, projects, notes, calendars or past work, or have it change something there. Pass the request close to verbatim; pass conversationId from the reply to continue that thread. When Friday proposes a change it waits for the user's approval in Friday: tell the user, don't retry.",
+      inputSchema: {
+        message: z.string().min(1).describe('What to ask or tell Friday'),
+        conversationId: z.string().optional().describe('Continue an existing Friday conversation'),
+      },
+    }, askFriday);
   }
 
   // Session-control tools (spawn/drive real claude processes) — only exposed to
