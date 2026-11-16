@@ -824,8 +824,10 @@ function sidebarItemHtml(s, i) {
   const dirLine = s.remote ? `${esc(s.host)}: ${esc(baseName(s.dir))}` : esc(baseName(s.dir));
   // Badge non-Claude CLIs (e.g. codex) so it's clear which tool a session runs.
   const cliTag = (s.kind && s.kind !== 'claude') ? `<span class="sb-cli" title="${esc(s.kind)} CLI">${esc(s.kind)}</span>` : '';
-  // Wisp marks the Deep Sessions Friday started (same mark as the dashboard cards).
-  const byFriday = s.origin === 'proactive' ? '<span class="by-friday" role="img" aria-label="Started by Friday" title="Started by Friday"><friday-face size="16" aria-hidden="true"></friday-face></span>' : '';
+  // Deep Sessions Friday started show Wisp in the status dot's place, in the dot's color.
+  const dot = s.origin === 'proactive'
+    ? `<span class="sb-dot sb-wisp ${statusDot(s)}" role="img" aria-label="Started by Friday" title="Started by Friday"><friday-face size="16" aria-hidden="true"></friday-face></span>`
+    : `<span class="sb-dot ${statusDot(s)}"></span>`;
   // Remote sessions (over SSH) are attach-only for now — no rename/kill/share.
   const actions = s.remote
     ? `<span class="sb-remote-tag" title="Remote tmux session on ${esc(s.host)}, attach only">${esc(s.paneCommand || 'remote')}</span>`
@@ -833,8 +835,8 @@ function sidebarItemHtml(s, i) {
         <button class="sb-rename" title="Rename Deep Session" aria-label="Rename Deep Session" data-rename="${esc(s.name)}"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 2.5 13.5 5 5.5 13H3v-2.5z"/></svg></button>
         <button class="sb-kill" title="Kill Deep Session" aria-label="Kill Deep Session" data-kill="${esc(s.name)}"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>`;
   return `<div class="sb-item ${cur ? 'current' : ''} ${att ? 'attn' : ''} ${done ? 'done' : ''} ${s.remote ? 'remote' : ''}" data-name="${esc(s.name)}">
-      <span class="sb-dot ${statusDot(s)}"></span>
-      <span class="sb-meta"><span class="sb-title">${byFriday}${cliTag}${esc(s.title)}</span><span class="sb-dir">${dirLine}</span></span>
+      ${dot}
+      <span class="sb-meta"><span class="sb-title">${cliTag}${esc(s.title)}</span><span class="sb-dir">${dirLine}</span></span>
       ${done ? DONE_TAG : att ? '<span class="sb-attn" role="img" title="Needs your attention" aria-label="Needs your attention"></span>' : num}
       <div class="sb-actions">${actions}</div>
     </div>`;
