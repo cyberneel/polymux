@@ -203,6 +203,9 @@ select { font-family: inherit; background: var(--bg); border: 1px solid var(--li
 .card-head { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px 10px; }
 .card-title { font-weight: 600; font-size: 15px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-open { color: inherit; text-decoration: none; }
+/* Wisp (friday-face.js) in disc mode: a --fg disc with --bg eyes, sized before the element upgrades. */
+.by-friday { display: inline-block; vertical-align: -3px; margin-right: 7px; }
+.by-friday friday-face { display: block; width: 16px; height: 16px; color: var(--fg); }
 .group-head { width: 100%; font: inherit; color: inherit; text-align: left; }
 .card-dir { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 0 16px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview {

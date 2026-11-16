@@ -1,4 +1,5 @@
 import './dialogs.js';
+import './friday-face.js'; // Wisp, Friday's character: a straight copy of friday/web/friday-face.js
 import css from './styles.css';
 import { registerServiceWorker, applyUpdate } from './swreg.js';
 import { openGraph } from './graph.js';
@@ -433,13 +434,16 @@ function renderStale() {
   cards.querySelector('[data-retry]').addEventListener('click', refresh);
 }
 
+// Wisp marks Friday's own work: the Deep Sessions it started and its starts waiting for a slot.
+const wisp = (label) => `<span class="by-friday" role="img" aria-label="${label}" title="${label}"><friday-face size="16" aria-hidden="true"></friday-face></span>`;
+
 // Friday's starts waiting for a slot, each with a cancel.
 function renderWaiting() {
   const n = waiting.queued.length;
   const cards = document.getElementById('cards');
   if (!n || !cards) return;
   cards.insertAdjacentHTML('afterbegin',
-    `<p class="muted" id="waiting">${n} waiting for a slot: ${waiting.queued.map((q) => {
+    `<p class="muted" id="waiting">${wisp('Queued by Friday')}${n} waiting for a slot: ${waiting.queued.map((q) => {
       const t = esc(q.title || q.dir);
       return `${t} <button type="button" class="icon danger" data-cancel="${esc(q.name)}" aria-label="Cancel ${t}">Cancel</button>`;
     }).join(', ')}. This deck runs ${waiting.max} Deep Session${waiting.max === 1 ? '' : 's'} at once. Close one to start the next.</p>`);
@@ -541,7 +545,7 @@ const parkedTip = (s) => `On background job${s.parked.jobName ? ` “${s.parked.
 function cardHtml(s) {
   const st = statusOf(s);
   return `<div class="card" data-name="${esc(s.name)}">
-    <div class="card-head"><div class="card-title" title="${esc(s.title)}">${s.kind && s.kind !== 'claude' ? `<span class="card-cli" title="${esc(s.kind)} CLI">${esc(s.kind)}</span>` : ''}<a class="card-open" href="/terminal.html?session=${encodeURIComponent(s.name)}">${esc(s.title)}</a></div></div>
+    <div class="card-head"><div class="card-title" title="${esc(s.title)}">${s.origin === 'proactive' ? wisp('Started by Friday') : ''}${s.kind && s.kind !== 'claude' ? `<span class="card-cli" title="${esc(s.kind)} CLI">${esc(s.kind)}</span>` : ''}<a class="card-open" href="/terminal.html?session=${encodeURIComponent(s.name)}">${esc(s.title)}</a></div></div>
     <div class="card-dir" title="${esc(s.dir)}">${esc(shortDir(s.dir))}</div>
     <pre class="preview" data-preview="${esc(s.name)}">${esc(previews.get(s.name)?.text ?? '…')}</pre>
     <div class="card-foot">
