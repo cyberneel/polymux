@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { CanvasAddon } from '@xterm/addon-canvas';
+import './friday-face.js'; // Wisp, Friday's character: a straight copy of friday/web/friday-face.js
 import css from './styles.css';
 import { registerServiceWorker, applyUpdate } from './swreg.js';
 import { openShare } from './graph.js';
@@ -823,6 +824,8 @@ function sidebarItemHtml(s, i) {
   const dirLine = s.remote ? `${esc(s.host)}: ${esc(baseName(s.dir))}` : esc(baseName(s.dir));
   // Badge non-Claude CLIs (e.g. codex) so it's clear which tool a session runs.
   const cliTag = (s.kind && s.kind !== 'claude') ? `<span class="sb-cli" title="${esc(s.kind)} CLI">${esc(s.kind)}</span>` : '';
+  // Wisp marks the Deep Sessions Friday started (same mark as the dashboard cards).
+  const byFriday = s.origin === 'proactive' ? '<span class="by-friday" role="img" aria-label="Started by Friday" title="Started by Friday"><friday-face size="16" aria-hidden="true"></friday-face></span>' : '';
   // Remote sessions (over SSH) are attach-only for now — no rename/kill/share.
   const actions = s.remote
     ? `<span class="sb-remote-tag" title="Remote tmux session on ${esc(s.host)}, attach only">${esc(s.paneCommand || 'remote')}</span>`
@@ -831,7 +834,7 @@ function sidebarItemHtml(s, i) {
         <button class="sb-kill" title="Kill Deep Session" aria-label="Kill Deep Session" data-kill="${esc(s.name)}"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>`;
   return `<div class="sb-item ${cur ? 'current' : ''} ${att ? 'attn' : ''} ${done ? 'done' : ''} ${s.remote ? 'remote' : ''}" data-name="${esc(s.name)}">
       <span class="sb-dot ${statusDot(s)}"></span>
-      <span class="sb-meta"><span class="sb-title">${cliTag}${esc(s.title)}</span><span class="sb-dir">${dirLine}</span></span>
+      <span class="sb-meta"><span class="sb-title">${byFriday}${cliTag}${esc(s.title)}</span><span class="sb-dir">${dirLine}</span></span>
       ${done ? DONE_TAG : att ? '<span class="sb-attn" role="img" title="Needs your attention" aria-label="Needs your attention"></span>' : num}
       <div class="sb-actions">${actions}</div>
     </div>`;
