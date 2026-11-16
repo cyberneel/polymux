@@ -44,7 +44,7 @@ import { consumeNotesSeed, consumeNotesSeedMany, pendingCounts, readPending, rea
 // resumedFrom (the stable @ccdeck_resume anchor). Notes are matched across all of it.
 const lineageIds = (s) => [s?.liveSessionId, s?.resumedFrom];
 import { captureSnapshot, restoreIfBoot, loadSnapshot } from './restore.js';
-import { startReachMonitor } from './reach-emit.js';
+import { startReachMonitor, fridayLinks } from './reach-emit.js';
 import { loadQueue, startSlots, startReaper, queued, cancelQueued } from './slots.js';
 import { onHook, hookKey, startTurnTelemetry } from './turn-telemetry.js';
 
@@ -303,7 +303,13 @@ app.post('/api/logout', async (req, reply) => {
 // ---- Session API ----
 app.get('/api/sessions', async () => {
   // queued: Friday's starts waiting for a slot; max: the session cap (0 = none).
-  return { sessions: await enrichedSessions(), queued: queued(), max: config.maxSessions };
+  const [sessions, links] = await Promise.all([enrichedSessions(), fridayLinks()]);
+  for (const s of sessions) { // the Friday threads it reports to, one per thread (Friday keys by live id or tmux name)
+    const ids = [s.liveSessionId, s.resumedFrom, s.name].filter(Boolean);
+    const mine = links.filter((l) => ids.includes(l.session_id) || l.name === s.name);
+    s.fridayThreads = [...new Map(mine.map((l) => [l.conversation_id, { title: l.title, url: l.url }])).values()];
+  }
+  return { sessions, queued: queued(), max: config.maxSessions };
 });
 
 // tmux sessions on other tailnet hosts (POLYMUX_REMOTE_HOSTS), listed over SSH.

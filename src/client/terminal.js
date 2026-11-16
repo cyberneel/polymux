@@ -824,9 +824,11 @@ function sidebarItemHtml(s, i) {
   const dirLine = s.remote ? `${esc(s.host)}: ${esc(baseName(s.dir))}` : esc(baseName(s.dir));
   // Badge non-Claude CLIs (e.g. codex) so it's clear which tool a session runs.
   const cliTag = (s.kind && s.kind !== 'claude') ? `<span class="sb-cli" title="${esc(s.kind)} CLI">${esc(s.kind)}</span>` : '';
-  // Deep Sessions Friday started show Wisp in the status dot's place, in the dot's color.
-  const dot = s.origin === 'proactive'
-    ? `<span class="sb-dot sb-wisp ${statusDot(s)}" role="img" aria-label="Started by Friday" title="Started by Friday"><friday-face size="16" aria-hidden="true"></friday-face></span>`
+  // Deep Sessions Friday started or reports to show Wisp in the status dot's place, in the
+  // dot's color; clicking it lists those Friday threads.
+  const label = s.fridayThreads?.length ? 'Reports to Friday' : 'Started by Friday';
+  const dot = s.origin === 'proactive' || s.fridayThreads?.length
+    ? `<button type="button" class="sb-dot sb-wisp ${statusDot(s)}" aria-label="${label}" title="${label}" data-wisp="${esc(s.name)}"><friday-face size="16" aria-hidden="true"></friday-face></button>`
     : `<span class="sb-dot ${statusDot(s)}"></span>`;
   // Remote sessions (over SSH) are attach-only for now — no rename/kill/share.
   const actions = s.remote
@@ -840,6 +842,34 @@ function sidebarItemHtml(s, i) {
       ${done ? DONE_TAG : att ? '<span class="sb-attn" role="img" title="Needs your attention" aria-label="Needs your attention"></span>' : num}
       <div class="sb-actions">${actions}</div>
     </div>`;
+}
+
+// The Friday threads a Deep Session reports to, each opening in Friday. Lives on <body> so the
+// sidebar's re-render on every poll doesn't take it away.
+function openWispMenu(b) {
+  const open = document.getElementById('wisp-menu');
+  open?.remove();
+  if (open?.dataset.for === b.dataset.wisp) return; // a second click closes it
+  const s = sessions.find((x) => x.name === b.dataset.wisp);
+  if (!s) return;
+  const m = document.createElement('div');
+  m.id = 'wisp-menu';
+  m.className = 'upload-menu wisp-menu';
+  m.dataset.for = s.name;
+  const threads = s.fridayThreads || [];
+  m.innerHTML = (s.origin === 'proactive' ? '<p>Started by Friday</p>' : '')
+    + (threads.length ? `<p>Reports to</p>${threads.map((t) => `<a href="${esc(t.url)}" target="_blank" rel="noopener" title="Open in Friday">${esc(t.title || 'Untitled thread')}</a>`).join('')}` : '');
+  const r = b.getBoundingClientRect();
+  m.style.top = `${r.bottom + 4}px`;
+  m.style.left = `${r.left}px`;
+  document.body.appendChild(m);
+  const close = (e) => {
+    if (e.type === 'keydown' ? e.key !== 'Escape' : m.contains(e.target) && !e.target.closest('a')) return;
+    m.remove();
+    document.removeEventListener('click', close);
+    document.removeEventListener('keydown', close);
+  };
+  setTimeout(() => { document.addEventListener('click', close); document.addEventListener('keydown', close); }, 0);
 }
 
 function renderSidebar() {
@@ -857,7 +887,9 @@ function renderSidebar() {
   if (remote.length) { html += group('Remote'); html += remote.map((s) => sidebarItemHtml(s, idx++)).join(''); }
   list.innerHTML = html || '<div class="faint" style="padding:12px">No active Deep Sessions</div>';
   list.querySelectorAll('.sb-item').forEach((el) =>
-    el.addEventListener('click', (e) => { if (!e.target.closest('.sb-kill, .sb-rename, .sb-share')) switchTo(el.dataset.name); }));
+    el.addEventListener('click', (e) => { if (!e.target.closest('.sb-kill, .sb-rename, .sb-share, .sb-wisp')) switchTo(el.dataset.name); }));
+  list.querySelectorAll('.sb-wisp').forEach((b) =>
+    b.addEventListener('click', (e) => { e.stopPropagation(); openWispMenu(b); }));
   updateNotesBtn();
   list.querySelectorAll('.sb-rename').forEach((b) =>
     b.addEventListener('click', (e) => { e.stopPropagation(); renameSessionFromSidebar(b.dataset.rename); }));

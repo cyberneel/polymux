@@ -8,6 +8,19 @@ import { config } from './config.js';
 import { listSessions, capturePane, promptText, lastTyped } from './tmux.js';
 import { attachAgents, deckStatus } from './agents.js';
 import { apnsEnabled, pushAll } from './apns.js';
+import { swr } from './swr.js';
+
+// The Friday threads following each Deep Session (Friday's /api/ccdeck/links, beside /api/reach),
+// so the sidebar can mark them with Wisp. [] when Friday isn't set up, is older, or doesn't answer.
+export const fridayLinks = swr(async () => {
+  if (!config.fridayReach.url) return [];
+  try {
+    const r = await fetch(new URL('/api/ccdeck/links', config.fridayReach.url), {
+      headers: { 'X-App-Password': config.fridayReach.password }, signal: AbortSignal.timeout(3000),
+    });
+    return r.ok ? (await r.json()).links || [] : [];
+  } catch { return []; }
+}, 5000, 60_000);
 
 const last = new Map(); // session name -> last status
 let primed = false; // first pass only records the baseline (no startup burst)

@@ -383,7 +383,7 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--surface); bor
 .sb-item.attn .sb-title { color: var(--fg); font-weight: 600; }
 .sb-warm { color: var(--green); font-size: 9px; vertical-align: middle; opacity: .8; }
 .sb-item.done .sb-dot { background: var(--green); }
-.sb-item .sb-dot.sb-wisp { flex: 0 0 16px; height: 16px; margin: 0 -4px; background: none; border-radius: 0; color: var(--fg); } /* -4px keeps titles in line with the 8px dots */
+.sb-item .sb-dot.sb-wisp { flex: 0 0 16px; height: 16px; margin: 0 -4px; padding: 0; border: 0; background: none; border-radius: 0; color: var(--fg); cursor: pointer; } /* -4px keeps titles in line with the 8px dots */
 .sb-item .sb-wisp.idle { color: var(--muted); }
 .sb-item .sb-wisp.attn { color: var(--red); }
 .sb-item.done .sb-wisp { color: var(--green); }
@@ -437,6 +437,10 @@ body:has(#update-toast) #update-howto { bottom: 88px; } /* both update notices: 
 }
 .upload-menu button { border: none; background: transparent; text-align: left; padding: 9px 14px;font-size: 13px; white-space: nowrap; }
 .upload-menu button:hover { background: var(--surface); }
+.wisp-menu { max-width: min(320px, calc(100vw - 16px)); }
+.wisp-menu p { margin: 0; padding: 6px 14px 2px; font-size: 12px; color: var(--muted); }
+.wisp-menu a { padding: 9px 14px; font-size: 13px; color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wisp-menu a:hover { background: var(--surface); }
 /* external-notes viewer */
 .nt-body { max-height: 55vh; overflow: auto; }
 .nt-note { border: 1px solid var(--hair);padding: 12px 14px; margin-bottom: 10px; background: var(--surface); }
