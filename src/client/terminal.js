@@ -746,6 +746,8 @@ function statusDot(s) {
   if (s.claudeStatus === 'idle') return 'ready';
   return isLive(s) ? 'live' : 'idle';
 }
+// Friday started it or a Friday thread follows it: Wisp stands in for the status dot.
+const byFriday = (s) => s.origin === 'proactive' || !!s.fridayThreads?.length;
 function needsAttention(s) {
   return attention.has(s.name);
 }
@@ -827,7 +829,7 @@ function sidebarItemHtml(s, i) {
   // Deep Sessions Friday started or reports to show Wisp in the status dot's place, in the
   // dot's color; clicking it lists those Friday threads.
   const label = s.fridayThreads?.length ? 'Reports to Friday' : 'Started by Friday';
-  const dot = s.origin === 'proactive' || s.fridayThreads?.length
+  const dot = byFriday(s)
     ? `<button type="button" class="sb-dot sb-wisp ${statusDot(s)}" aria-label="${label}" title="${label}" data-wisp="${esc(s.name)}"><friday-face size="16" aria-hidden="true"></friday-face></button>`
     : `<span class="sb-dot ${statusDot(s)}"></span>`;
   // Remote sessions (over SSH) are attach-only for now — no rename/kill/share.
@@ -983,7 +985,7 @@ function renderSwitcher() {
   swBox.innerHTML = swList.map((name, i) => {
     const s = sessions.find((x) => x.name === name) || {};
     return `<div class="sw-item ${i === swIdx ? 'sel' : ''}" data-i="${i}">
-      <span class="sb-dot ${statusDot(s)}"></span><span class="sw-t">${esc(titleOf(name))}${needsAttention(s) ? (s.waitingFor ? ' <span class="sb-attn" role="img" aria-label="Needs your attention"></span>' : ` ${DONE_TAG}`) : ''}</span>
+      ${byFriday(s) ? `<span class="sb-dot sb-wisp ${statusDot(s)}"><friday-face size="16" aria-hidden="true"></friday-face></span>` : `<span class="sb-dot ${statusDot(s)}"></span>`}<span class="sw-t">${esc(titleOf(name))}${needsAttention(s) ? (s.waitingFor ? ' <span class="sb-attn" role="img" aria-label="Needs your attention"></span>' : ` ${DONE_TAG}`) : ''}</span>
       <span class="sw-d">${esc(baseName(s.dir))}</span>
     </div>`;
   }).join('');
