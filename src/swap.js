@@ -3,7 +3,7 @@
 // stand-in is idle, the original conversation resumes with what the stand-in did typed in.
 // The session answers to its original conversation id throughout (@ccdeck_resume, and
 // list_sessions' session_id), so Friday's links, watches, pip and relay never see the swap.
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
@@ -11,6 +11,8 @@ import { join } from 'node:path';
 import { availableProviders, getProvider, runsClaude } from './providers/index.js';
 import { getBurn } from './burn.js';
 import { relaunch } from './tmux.js';
+import { swr } from './swr.js';
+import { config } from './config.js';
 import { buildHandoffFile, summarize } from './handoff.js';
 
 const exec = promisify(execFile);
@@ -34,21 +36,61 @@ export async function setPrefs(p) {
   return next;
 }
 
-const windows = (b) => [b?.limits?.session, b?.limits?.weekly, ...(b?.scopedWeekly || [])].filter(Boolean);
 const label = (k) => getProvider(k).label;
 
-// Kinds that could take over a spent session right now, best first.
-export function rankStandIns(providers, sessions, burn, p) {
+// Each CLI's plan as its windows, [{ used: 0-1, resets: ms }], or null when it can't tell.
+// A window past its reset reads as unused, so an old reading never keeps a plan spent.
+const win = (used, resets) => ({ used: resets > Date.now() ? used : 0, resets });
+const isSpent = (ws) => ws?.some((w) => w.used >= FULL);
+// Codex writes its account's limits into every rollout: the newest one has the latest.
+export const codexWindows = (rl) => [rl?.primary, rl?.secondary].filter((w) => w?.resets_at).map((w) => win((w.used_percent || 0) / 100, w.resets_at * 1000));
+// agy's /usage prints one tab-separated row per bucket: family, window, "94%" left, ISO reset.
+export const agyWindows = (text) => text.split('\n').map((l) => l.split('\t'))
+  .filter((c) => c.length >= 4 && /^\d+%$/.test(c[2].trim()))
+  .map((c) => win(1 - parseInt(c[2], 10) / 100, Date.parse(c[3].trim())));
+const some = (ws) => (ws?.length ? ws : null);
+const PLANS = {
+  claude: swr(async () => {
+    const b = await getBurn();
+    return b?.available ? some([b.limits?.session, b.limits?.weekly, ...(b.scopedWeekly || [])].filter(Boolean).map((w) => win(w.utilization || 0, Date.parse(w.resets_at)))) : null;
+  }, 60_000),
+  codex: swr(async () => {
+    const root = join(homedir(), '.codex', 'sessions');
+    const files = (await readdir(root, { recursive: true })).filter((f) => f.endsWith('.jsonl'));
+    const times = await Promise.all(files.map((f) => stat(join(root, f)).then((x) => x.mtimeMs, () => 0)));
+    const newest = files[times.indexOf(Math.max(...times))];
+    if (!newest) return null;
+    const fh = await open(join(root, newest));
+    try {
+      const { size } = await fh.stat(), len = Math.min(size, 512 * 1024), buf = Buffer.alloc(len);
+      await fh.read(buf, 0, len, size - len);
+      const lines = buf.toString('utf8').split('\n');
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (!lines[i].includes('"rate_limits"')) continue;
+        try { return some(codexWindows(JSON.parse(lines[i]).payload?.rate_limits)); } catch { /* cut-off line */ }
+      }
+      return null;
+    } finally { await fh.close(); }
+  }, 60_000),
+  // ponytail: any spent bucket counts, so a spent Claude/GPT bucket also holds back a Gemini session.
+  agy: swr(async () => {
+    const [bin, ...args] = config.agyCommand.split(/\s+/);
+    return some(agyWindows((await exec(bin, [...args, '--print', '/usage'], { timeout: 30_000 })).stdout));
+  }, 3 * 60_000),
+};
+const plan = (kind) => (PLANS[kind] ? PLANS[kind]().catch(() => null) : Promise.resolve(null));
+
+// Kinds that could take over a spent session right now, best first. `plans`: kind -> windows.
+export function rankStandIns(providers, sessions, plans, p) {
   const spent = new Set(sessions.filter((x) => x.outOfUsage === 'limit').map((x) => x.kind || 'claude'));
-  if (burn?.available && windows(burn).some((w) => (w.utilization || 0) >= FULL)) spent.add('claude');
-  // Claude ranks by plan left; Codex/agy report none (0.5); Publik is paid, so last.
-  const left = (k) => (k === 'claude' ? (burn?.available ? 1 - Math.max(...windows(burn).map((w) => w.utilization || 0)) : 0.5) : k === 'publik' ? 0.1 : 0.5);
+  for (const [k, ws] of Object.entries(plans)) if (isSpent(ws)) spent.add(k);
+  // By plan left; one that can't tell counts as half; Publik is paid, so last.
+  const left = (k) => (plans[k] ? 1 - Math.max(...plans[k].map((w) => w.used)) : k === 'publik' ? 0.1 : 0.5);
   return providers
     .filter((x) => x.gate !== 'setup' && !spent.has(x.kind) && (x.kind !== 'publik' || p.publik))
     .map((x) => x.kind)
     .sort((a, b) => left(b) - left(a));
 }
-const standIns = async (sessions) => rankStandIns(await availableProviders(), sessions, await getBurn().catch(() => null), await prefs());
 
 let ready = []; // standIns() as of the last tick
 // name -> until when it stays put: just moved (a resumed transcript still ends on the limit
@@ -67,12 +109,12 @@ function willContinue(s) {
 // relay the limit notice (or a half-booted CLI) as the session's answer.
 export const switching = (s) => moving.has(s.name) || willContinue(s);
 
-// When the original plan is back: the end of its spent window (Claude, from ccburn), else
-// unknown (null: the user moves it back).
+// When the original plan is back: the end of its spent windows, or null when its CLI can't
+// tell (Publik: the user moves it back).
 async function resetAt(from) {
-  if (from !== 'claude') return null;
-  const ws = windows(await getBurn().catch(() => null));
-  const at = Math.max(0, ...ws.filter((w) => (w.utilization || 0) >= FULL).map((w) => Date.parse(w.resets_at) || 0));
+  const ws = await plan(from);
+  if (!ws) return null;
+  const at = Math.max(0, ...ws.filter((w) => w.used >= FULL).map((w) => w.resets || 0));
   return at || Date.now() + 30 * 60_000; // ponytail: spent but no window reads full: look again in 30 min
 }
 
@@ -125,19 +167,23 @@ export async function mergeBack(s) {
   return move(s.name, { kind: from, resume: main, tag: main, swap: null, seed });
 }
 
-// Each tick: move spent sessions to a stand-in, and Claude originals back once their plan resets.
-// ponytail: a stand-in that runs out waits for the user to move it on, and Codex/agy originals
-// go back by hand (neither reports when its plan resets).
+// Each tick: move spent sessions to a stand-in, and originals back once their plan resets.
+// ponytail: a stand-in that runs out waits for the user to move it on.
 async function tick(sessions) {
   const p = await prefs();
-  ready = p.auto ? await standIns(sessions) : [];
-  const burn = await getBurn().catch(() => null);
-  const claudeBack = (s) => s.swap.from === 'claude' && Date.now() >= (s.swap.until || Infinity)
-    && !(burn?.available && [burn.limits?.session, burn.limits?.weekly].some((w) => (w?.utilization || 0) >= FULL));
+  if (!p.auto) { ready = []; return; }
+  const providers = await availableProviders();
+  // Plans are read only while a session is out or carried (agy's costs a CLI run); `ready` is
+  // kept either way, so a session that just ran out reads as switching straight away.
+  const need = sessions.some((s) => s.outOfUsage === 'limit' || s.swap);
+  const plans = need ? Object.fromEntries(await Promise.all(providers.map(async (x) => [x.kind, await plan(x.kind)]))) : {};
+  ready = rankStandIns(providers, sessions, plans, p);
+  if (!need) return;
+  const planBack = (s) => Date.now() >= (s.swap.until || Infinity) && plans[s.swap.from] && !isSpent(plans[s.swap.from]);
   for (const s of sessions) {
     try {
       if (willContinue(s)) await standIn(s, ready.find((k) => k !== (s.kind || 'claude')));
-      else if (p.auto && s.swap && claudeBack(s) && !moving.has(s.name) && s.claudeStatus === 'idle' && !s.waitingFor && Date.now() - Math.max(s.lastActivity || 0, s.outputAt || 0) > 60_000) await mergeBack(s);
+      else if (s.swap && planBack(s) && !moving.has(s.name) && s.claudeStatus === 'idle' && !s.waitingFor && Date.now() - Math.max(s.lastActivity || 0, s.outputAt || 0) > 60_000) await mergeBack(s);
     } catch (e) {
       held(s.name, 10 * 60_000);
       console.warn(`[polymux] auto-continue ${s.name}: ${e.message}`);

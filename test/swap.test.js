@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -20,7 +20,7 @@ let buf = ''; process.stdin.on('data', (d) => { buf += d; if (buf.includes('\\r'
 process.env.POLYMUX_LAUNCH = `node ${join(dir, 'cli.cjs')} claude`;
 process.env.POLYMUX_CODEX_LAUNCH = `node ${join(dir, 'cli.cjs')} codex`;
 
-const { rankStandIns, standIn, mergeBack } = await import('../src/swap.js');
+const { rankStandIns, standIn, mergeBack, codexWindows, agyWindows } = await import('../src/swap.js');
 const { listSessions } = await import('../src/tmux.js');
 const tmux = (...a) => execFileSync('tmux', ['-L', process.env.POLYMUX_TMUX_SOCKET, ...a], { stdio: 'pipe' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -30,13 +30,28 @@ async function until(re) {
   assert.match(log(), re);
 }
 
-test('stand-ins: Publik only when opted in and last; a spent CLI never', () => {
+const soon = Date.now() + 3600_000;
+test('stand-ins: by plan left, Publik only when opted in and last, a spent CLI never', () => {
   const all = ['claude', 'codex', 'agy', 'publik'].map((kind) => ({ kind }));
-  const burn = (u) => ({ available: true, limits: { session: { utilization: u }, weekly: { utilization: 0.2 } } });
-  assert.deepEqual(rankStandIns(all, [], burn(0.1), { publik: false }), ['claude', 'codex', 'agy']);
-  assert.deepEqual(rankStandIns(all, [], burn(0.97), { publik: true }), ['codex', 'agy', 'publik']);
-  assert.deepEqual(rankStandIns(all, [{ kind: 'codex', outOfUsage: 'limit' }], burn(0.97), { publik: false }), ['agy']);
-  assert.deepEqual(rankStandIns([{ kind: 'codex', gate: 'setup' }, { kind: 'agy' }], [], null, { publik: false }), ['agy']);
+  const claude = (u) => ({ claude: [{ used: u, resets: soon }, { used: 0.2, resets: soon }] });
+  assert.deepEqual(rankStandIns(all, [], claude(0.1), { publik: false }), ['claude', 'codex', 'agy']);
+  assert.deepEqual(rankStandIns(all, [], claude(0.97), { publik: true }), ['codex', 'agy', 'publik']);
+  assert.deepEqual(rankStandIns(all, [{ kind: 'codex', outOfUsage: 'limit' }], claude(0.97), { publik: false }), ['agy']);
+  assert.deepEqual(rankStandIns([{ kind: 'codex', gate: 'setup' }, { kind: 'agy' }], [], {}, { publik: false }), ['agy']);
+  const plans = { ...claude(0.5), codex: [{ used: 0.1, resets: soon }], agy: [{ used: 0.99, resets: soon }] };
+  assert.deepEqual(rankStandIns(all, [], plans, { publik: false }), ['codex', 'claude']);
+});
+
+test('plans: Codex rollout limits and agy /usage rows; a window past its reset is unused', () => {
+  const at = Math.floor(soon / 1000);
+  assert.deepEqual(codexWindows({ primary: { used_percent: 100, resets_at: at }, secondary: { used_percent: 40, resets_at: 1 } }),
+    [{ used: 1, resets: at * 1000 }, { used: 0, resets: 1000 }]);
+  const iso = new Date(soon).toISOString();
+  const rows = agyWindows(`banner\nGemini Models\tFive Hour Limit Remaining\t0%\t${iso}\nClaude and GPT models\tWeekly Limit Remaining\t94%\t${iso}\n`);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].used, 1);
+  assert.ok(Math.abs(rows[1].used - 0.06) < 1e-9);
+  assert.equal(rows[0].resets, Date.parse(iso));
 });
 
 test('stand-in and back keep the tile and the original conversation id', async (t) => {
@@ -47,7 +62,12 @@ test('stand-in and back keep the tile and the original conversation id', async (
   tmux('set-option', '-t', name, '@ccdeck_title', 'Fix the parser');
   t.after(() => { try { tmux('kill-server'); } catch {} });
 
-  // Codex ran out: Claude carries on in the same tile, told where the transcript is.
+  // Codex ran out (its rollout says when its 5-hour window resets): Claude carries on in the same
+  // tile, told where the transcript is.
+  const resets = Math.floor(soon / 1000) * 1000;
+  mkdirSync(join(dir, '.codex/sessions/2026/11/22'), { recursive: true });
+  writeFileSync(join(dir, '.codex/sessions/2026/11/22/rollout-x.jsonl'), JSON.stringify({ type: 'event_msg', payload: { type: 'token_count',
+    rate_limits: { primary: { used_percent: 100, resets_at: resets / 1000 }, secondary: { used_percent: 30, resets_at: resets / 1000 + 9e5 } } } }) + '\n');
   await standIn({ name, kind: 'codex', liveSessionId: main, transcript: '/x/rollout.jsonl', dir, title: 'Fix the parser' }, 'claude');
   await until(/line:.*rollout\.jsonl/);
   assert.match(log(), /^argv:claude /m);
@@ -57,7 +77,7 @@ test('stand-in and back keep the tile and the original conversation id', async (
   assert.equal(s.title, 'Fix the parser');
   assert.equal(s.kind, 'claude');
   assert.equal(s.resumedFrom, main); // Friday's links find it by this id
-  assert.deepEqual({ from: s.swap.from, main: s.swap.main, until: s.swap.until }, { from: 'codex', main, until: null });
+  assert.deepEqual({ from: s.swap.from, main: s.swap.main, until: s.swap.until }, { from: 'codex', main, until: resets });
 
   // Back: Codex resumes its own conversation and is told what happened meanwhile.
   await mergeBack(s);
