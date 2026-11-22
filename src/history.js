@@ -1,4 +1,4 @@
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { readdir, stat, open } from 'node:fs/promises';
 import { join, dirname, basename } from 'node:path';
@@ -234,12 +234,26 @@ function indexRows(file, sql) {
   } catch { return []; } finally { db?.close(); }
 }
 
+// Codex and agy can't be renamed from outside (no /rename), so the name a tile carries is kept here
+// by conversation id, and Resume shows it over the CLI's own title.
+const TITLES = join(homedir(), '.claude', 'cc-deck', 'cli-titles.json');
+let titles;
+const cliTitles = () => (titles ??= (() => { try { return JSON.parse(readFileSync(TITLES, 'utf8')); } catch { return {}; } })());
+export function keepCliTitles(sessions) {
+  const t = cliTitles();
+  const named = sessions.filter((s) => (s.kind === 'codex' || s.kind === 'agy') && s.liveSessionId
+    && s.title && s.title !== s.name.slice(config.prefix.length) && t[s.liveSessionId] !== s.title);
+  if (!named.length) return;
+  for (const s of named) t[s.liveSessionId] = s.title;
+  try { mkdirSync(dirname(TITLES), { recursive: true }); writeFileSync(TITLES, JSON.stringify(t)); } catch { /* next poll retries */ }
+}
+
 // Past Codex and agy conversations, from each CLI's own index (title, folder, last change), so a
 // closed tile resumes like a Claude one. Interactive ones only (no `codex exec` or agy subagent
 // runs), in folders a session can open.
 export async function cliHistory() {
   const past = (kind, id, cwd, title, at, gitBranch = '') =>
-    ({ sessionId: id, kind, cwd: cwd || '', gitBranch: gitBranch || '', title: title || '(untitled session)', mode: null, lastModified: at || 0, sizeKb: 0 });
+    ({ sessionId: id, kind, cwd: cwd || '', gitBranch: gitBranch || '', title: cliTitles()[id] || title || '(untitled session)', mode: null, lastModified: at || 0, sizeKb: 0 });
   const agy = indexRows(join(homedir(), '.gemini', 'antigravity-cli', 'conversation_summaries.db'),
     `SELECT conversation_id id, title, workspace_uris ws, last_modified_time t FROM conversation_summaries
      WHERE nesting_depth = 0 ORDER BY last_modified_time DESC LIMIT ${MAX_RESULTS}`)

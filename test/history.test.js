@@ -7,7 +7,7 @@ import { join } from 'node:path';
 // Transcripts live under ~/.claude/projects: a scratch HOME, so the real ones are never read.
 process.env.HOME = mkdtempSync(join(tmpdir(), 'ccdeck-history-'));
 process.env.POLYMUX_ROOTS = '/work';
-const { listHistory, cliHistory } = await import('../src/history.js');
+const { listHistory, cliHistory, keepCliTitles } = await import('../src/history.js');
 
 test('History leaves out `claude -p` runs, even one whose prompt names a session', async () => {
   const dir = join(process.env.HOME, '.claude', 'projects', '-work-cyberdeck');
@@ -43,8 +43,11 @@ test('past Codex and agy conversations list from their indexes, only interactive
   put.run('01a113cc-0000-7000-8000-000000000002', 'one-shot', null, '/work/cyberdeck', null, 'exec', 0, 1795300000, 1795300000000);
   put.run('01a113cc-0000-7000-8000-000000000003', 'old', null, '/work/cyberdeck', null, 'cli', 1, 1795300000, 1795300000000);
   cx.close();
+  // A tile's own name outlives it (an unnamed tile, titled by its tmux name, records nothing).
+  keepCliTitles([{ name: 'ccdeck-a1', kind: 'agy', liveSessionId: 'aaaaaaaa-0000-4000-8000-000000000001', title: 'reel ideas' },
+    { name: 'ccdeck-b2', kind: 'codex', liveSessionId: '01a113cc-0000-7000-8000-000000000001', title: 'b2' }]);
   assert.deepEqual((await cliHistory()).map((s) => [s.sessionId.slice(-1), s.kind, s.cwd, s.title, s.lastModified, s.gitBranch]), [
-    ['1', 'agy', '/work/ideas', 'Reel formats', Date.parse('2026-11-22T18:21:45.657Z'), ''],
+    ['1', 'agy', '/work/ideas', 'reel ideas', Date.parse('2026-11-22T18:21:45.657Z'), ''],
     ['1', 'codex', '/work/cyberdeck', 'Parser fix', 1795300000000, 'main'],
   ]);
 });

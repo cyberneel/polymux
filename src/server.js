@@ -31,7 +31,7 @@ import { registerDevice, apnsEnabled } from './apns.js';
 import { attachHandler } from './pty.js';
 import { initServer } from './tmux.js';
 import { attachAgents } from './agents.js';
-import { listHistory, cliHistory, claudeLiveMeta } from './history.js';
+import { listHistory, cliHistory, keepCliTitles, claudeLiveMeta } from './history.js';
 import { buildGraph, buildThread } from './graph.js';
 import { runHandoff } from './handoff.js';
 import { listArtifacts, deleteArtifacts } from './storage.js';
@@ -56,6 +56,7 @@ async function enrichedSessions() {
   const sessions = await listSessions();
   try {
     await attachAgents(sessions);
+    keepCliTitles(sessions);
     const notes = await pendingCounts(); // external-note counts keyed by Claude id
     await Promise.all(sessions.map(async (s) => {
       if (!s.liveSessionId) return;
