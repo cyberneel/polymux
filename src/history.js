@@ -224,20 +224,37 @@ export async function listHistory() {
   return { sessions, truncated, total: files.length };
 }
 
-// Past agy conversations, from agy's own index (title, folder, last change), so a closed agy tile
-// can be resumed like a Claude one. Only folders a session can open; agy's scratch runs stay out.
-export function agyHistory() {
+// Rows of a CLI's own sqlite index, opened read-only; none if it isn't there.
+function indexRows(file, sql) {
   let db;
   try {
     const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
-    db = new DatabaseSync(join(homedir(), '.gemini', 'antigravity-cli', 'conversation_summaries.db'), { readOnly: true });
-    return db.prepare(`SELECT conversation_id id, title, workspace_uris ws, last_modified_time t FROM conversation_summaries
-      WHERE nesting_depth = 0 ORDER BY last_modified_time DESC LIMIT ${MAX_RESULTS}`).all()
-      .map((r) => {
-        let cwd = '';
-        try { cwd = fileURLToPath(JSON.parse(r.ws)[0]); } catch { /* no folder */ }
-        return { sessionId: r.id, kind: 'agy', cwd, gitBranch: '', title: r.title || '(untitled session)', mode: null, lastModified: Date.parse(r.t) || 0, sizeKb: 0 };
-      })
-      .filter((s) => s.cwd && config.roots.some((r) => s.cwd === r || s.cwd.startsWith(r + '/')));
+    db = new DatabaseSync(file, { readOnly: true });
+    return db.prepare(sql).all();
   } catch { return []; } finally { db?.close(); }
+}
+
+// Past Codex and agy conversations, from each CLI's own index (title, folder, last change), so a
+// closed tile resumes like a Claude one. Interactive ones only (no `codex exec` or agy subagent
+// runs), in folders a session can open.
+export async function cliHistory() {
+  const past = (kind, id, cwd, title, at, gitBranch = '') =>
+    ({ sessionId: id, kind, cwd: cwd || '', gitBranch: gitBranch || '', title: title || '(untitled session)', mode: null, lastModified: at || 0, sizeKb: 0 });
+  const agy = indexRows(join(homedir(), '.gemini', 'antigravity-cli', 'conversation_summaries.db'),
+    `SELECT conversation_id id, title, workspace_uris ws, last_modified_time t FROM conversation_summaries
+     WHERE nesting_depth = 0 ORDER BY last_modified_time DESC LIMIT ${MAX_RESULTS}`)
+    .map((r) => {
+      let cwd = '';
+      try { cwd = fileURLToPath(JSON.parse(r.ws)[0]); } catch { /* no folder */ }
+      return past('agy', r.id, cwd, r.title, Date.parse(r.t));
+    });
+  // Codex numbers its state db by schema (state_5.sqlite): the highest is the live one.
+  const dir = join(homedir(), '.codex');
+  const state = (await readdir(dir).catch(() => [])).filter((f) => /^state_\d+\.sqlite$/.test(f))
+    .sort((a, b) => parseInt(b.slice(6)) - parseInt(a.slice(6)))[0];
+  const codex = state ? indexRows(join(dir, state),
+    `SELECT id, coalesce(nullif(name, ''), title) title, cwd, git_branch b, coalesce(updated_at_ms, updated_at * 1000) t FROM threads
+     WHERE source = 'cli' AND archived = 0 ORDER BY t DESC LIMIT ${MAX_RESULTS}`)
+    .map((r) => past('codex', r.id, r.cwd, r.title, r.t, r.b)) : [];
+  return [...agy, ...codex].filter((s) => s.cwd && config.roots.some((r) => s.cwd === r || s.cwd.startsWith(r + '/')));
 }

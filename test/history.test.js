@@ -7,7 +7,7 @@ import { join } from 'node:path';
 // Transcripts live under ~/.claude/projects: a scratch HOME, so the real ones are never read.
 process.env.HOME = mkdtempSync(join(tmpdir(), 'ccdeck-history-'));
 process.env.POLYMUX_ROOTS = '/work';
-const { listHistory, agyHistory } = await import('../src/history.js');
+const { listHistory, cliHistory } = await import('../src/history.js');
 
 test('History leaves out `claude -p` runs, even one whose prompt names a session', async () => {
   const dir = join(process.env.HOME, '.claude', 'projects', '-work-cyberdeck');
@@ -23,7 +23,7 @@ test('History leaves out `claude -p` runs, even one whose prompt names a session
   assert.equal(h.total, 1);
 });
 
-test('past agy conversations list from its index, only those in a folder a session can open', () => {
+test('past Codex and agy conversations list from their indexes, only interactive ones in a folder a session can open', async () => {
   const dir = join(process.env.HOME, '.gemini', 'antigravity-cli');
   mkdirSync(dir, { recursive: true });
   const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
@@ -34,6 +34,17 @@ test('past agy conversations list from its index, only those in a folder a sessi
   add.run('aaaaaaaa-0000-4000-8000-000000000002', 'Scratch run', '["file:///tmp/x"]', '2026-11-22 19:00:00+00:00', 0);
   add.run('aaaaaaaa-0000-4000-8000-000000000003', 'Subagent', '["file:///work/ideas"]', '2026-11-22 19:00:00+00:00', 1);
   db.close();
-  assert.deepEqual(agyHistory().map((s) => [s.sessionId.slice(-1), s.kind, s.cwd, s.title, s.lastModified]),
-    [['1', 'agy', '/work/ideas', 'Reel formats', Date.parse('2026-11-22T18:21:45.657Z')]]);
+  mkdirSync(join(process.env.HOME, '.codex'));
+  const cx = new DatabaseSync(join(process.env.HOME, '.codex', 'state_5.sqlite'));
+  cx.exec(`CREATE TABLE threads (id text, title text, name text, cwd text, git_branch text, source text, archived integer,
+    updated_at integer, updated_at_ms integer)`);
+  const put = cx.prepare('INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  put.run('01a113cc-0000-7000-8000-000000000001', 'fix the parser please', 'Parser fix', '/work/cyberdeck', 'main', 'cli', 0, 1795300000, 1795300000000);
+  put.run('01a113cc-0000-7000-8000-000000000002', 'one-shot', null, '/work/cyberdeck', null, 'exec', 0, 1795300000, 1795300000000);
+  put.run('01a113cc-0000-7000-8000-000000000003', 'old', null, '/work/cyberdeck', null, 'cli', 1, 1795300000, 1795300000000);
+  cx.close();
+  assert.deepEqual((await cliHistory()).map((s) => [s.sessionId.slice(-1), s.kind, s.cwd, s.title, s.lastModified, s.gitBranch]), [
+    ['1', 'agy', '/work/ideas', 'Reel formats', Date.parse('2026-11-22T18:21:45.657Z'), ''],
+    ['1', 'codex', '/work/cyberdeck', 'Parser fix', 1795300000000, 'main'],
+  ]);
 });
