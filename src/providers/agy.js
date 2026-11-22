@@ -35,6 +35,9 @@ export const agy = {
       args = ` --conversation ${resume}`; // agy has no fork; resume continues the conversation
     }
     if (/^(accept-edits|plan)$/.test(config.agyMode)) args += ` --mode ${config.agyMode}`;
+    // agy's default preset (request-review) asks before every tool and MCP call; when Claude
+    // sessions here run without prompts, agy does too (this session only, never saved).
+    if (/^(auto|bypassPermissions)$/.test(config.permissionMode)) args += ` --settings '{"toolPermission":"always-proceed"}'`;
     return args;
   },
 

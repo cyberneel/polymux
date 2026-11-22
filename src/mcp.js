@@ -430,7 +430,8 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
     description:
       "Save a concise summary of THIS conversation's outcomes back into a specific Deep Session (any CLI — Claude, Codex, or agy), so that Deep Session becomes aware of what happened here the next time the user opens or resumes it. This is the cross-Deep-Session note channel: it reaches a Deep Session even while it is offline. Never target your OWN session — its transcript already records the work. " +
       'IMPORTANT: Only call this AFTER explicitly asking the user whether they want a summary saved back to that Deep Session, and confirming which session_id it should attach to (from a prior search_sessions / get_session_context result). ' +
-      'The summary should capture decisions made, conclusions reached, and any action items relevant to that Deep Session\'s work.',
+      'The summary should capture decisions made, conclusions reached, and any action items relevant to that Deep Session\'s work. ' +
+      "Not for the user's own notes: \"make a note\" or \"save it in Friday\" means Friday, the assistant (ask_friday), not a Deep Session that has Friday in its name.",
     inputSchema: {
       session_id: z.string().describe('The sessionId this summary attaches to (from search_sessions / get_session_context) — or the Deep Session title.'),
       summary: z.string().min(1).max(8000).describe('A concise summary of the outcomes/decisions/action-items from this conversation, written for the other Deep Session to pick up.'),
@@ -540,7 +541,7 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
   if (!sessionControl && fridayLink) {
     server.registerTool('ask_friday', {
       title: 'Ask Friday',
-      description: "Ask Friday, the user's assistant, about their tasks, projects, notes, calendars or past work, or have it change something there. Pass the request close to verbatim; pass conversationId from the reply to continue that thread. When Friday proposes a change it waits for the user's approval in Friday: tell the user, don't retry.",
+      description: "Ask Friday, the user's assistant, about their tasks, projects, notes, calendars or past work, or have it change something there. The user's own notes live here: \"make a note (in Friday)\" means ask_friday with the note's full content. Pass the request close to verbatim; pass conversationId from the reply to continue that thread. When Friday proposes a change it waits for the user's approval in Friday: tell the user, don't retry.",
       inputSchema: {
         message: z.string().min(1).describe('What to ask or tell Friday'),
         conversationId: z.string().optional().describe('Continue an existing Friday conversation'),
