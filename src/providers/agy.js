@@ -41,13 +41,12 @@ export const agy = {
   // MCP is registered globally (registerAgyMcp), not per launch. Nothing to append.
   async wireFlags() { return ''; },
 
-  // Live status + conversation (agents.js). The running agy holds its conversation open
-  // (antigravity-cli/conversations/<id>.db, or a file under brain/<id>/); the readable log of
-  // it is brain/<id>/.system_generated/logs/transcript.jsonl, one line per step.
-  // ponytail: which of those files agy keeps open is unverified on a live agy (none ran here).
+  // Live status + conversation (agents.js). A running agy holds antigravity-cli/presence/<id>.lock
+  // open (seen on agy 2026-11-22; the conversations/<id>.db and brain/<id>/ files only now and
+  // then); the readable log of it is brain/<id>/.system_generated/logs/transcript.jsonl.
   transcriptOf(path) {
-    const m = /^(.*\/antigravity-cli)\/(?:conversations\/([^/]+)\.db|brain\/([^/]+)\/)/.exec(path);
-    const id = m && (m[2] || m[3]);
+    const m = /^(.*\/antigravity-cli)\/(?:conversations\/([^/]+)\.db|brain\/([^/]+)\/|presence\/([^/]+)\.lock$)/.exec(path);
+    const id = m && (m[2] || m[3] || m[4]);
     return id && ID_RE.test(id) ? { id, file: join(m[1], 'brain', id, '.system_generated', 'logs', 'transcript.jsonl') } : null;
   },
   // A turn ends on a model response that calls no tool, or on an account error; anything after

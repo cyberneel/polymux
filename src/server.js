@@ -31,7 +31,7 @@ import { registerDevice, apnsEnabled } from './apns.js';
 import { attachHandler } from './pty.js';
 import { initServer } from './tmux.js';
 import { attachAgents } from './agents.js';
-import { listHistory, claudeLiveMeta } from './history.js';
+import { listHistory, agyHistory, claudeLiveMeta } from './history.js';
 import { buildGraph, buildThread } from './graph.js';
 import { runHandoff } from './handoff.js';
 import { listArtifacts, deleteArtifacts } from './storage.js';
@@ -347,10 +347,12 @@ app.post('/api/sessions', async (req, reply) => {
   }
 });
 
-// Past Claude sessions on disk (resumable via `claude --resume`), excluding any
+// Past Claude and agy sessions on disk (resumable), excluding any
 // that are currently running — those live in the Active tab, so History stays clean.
 app.get('/api/history', async () => {
-  const hist = await listHistory();
+  const hist = await listHistory(), agyPast = agyHistory();
+  hist.sessions = [...hist.sessions, ...agyPast].sort((a, b) => b.lastModified - a.lastModified);
+  hist.total = (hist.total ?? 0) + agyPast.length;
   try {
     const live = new Set();
     for (const s of await enrichedSessions()) {

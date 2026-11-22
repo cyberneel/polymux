@@ -382,7 +382,7 @@ async function openResumeModal() {
   try { items = (await api('/api/history')).sessions.filter((s) => s.cwd); }
   catch (e) { list.innerHTML = `<div class="faint" style="padding:8px">${esc(e.message)}</div>`; return; }
   list.innerHTML = items.map((s) =>
-    `<div class="seed-item" data-id="${esc(s.sessionId)}" data-dir="${esc(s.cwd)}" data-title="${esc(s.title)}">
+    `<div class="seed-item" data-id="${esc(s.sessionId)}" data-dir="${esc(s.cwd)}" data-title="${esc(s.title)}" data-kind="${esc(s.kind || '')}">
       <span class="seed-item-main"><span class="seed-item-title">${esc(s.title)}</span><span class="seed-item-meta faint">${esc(s.cwd)}${s.gitBranch ? ', ' + esc(s.gitBranch) : ''}</span></span>
     </div>`).join('') || '<div class="faint" style="padding:8px">No past Deep Sessions.</div>';
   bg.querySelector('#rs-filter').addEventListener('input', (e) => {
@@ -392,7 +392,7 @@ async function openResumeModal() {
   list.querySelectorAll('.seed-item').forEach((el) => el.addEventListener('click', async () => {
     el.style.opacity = '.5';
     try {
-      const { name } = await api('/api/sessions', { method: 'POST', body: JSON.stringify({ dir: el.dataset.dir, title: el.dataset.title, resume: el.dataset.id }) });
+      const { name } = await api('/api/sessions', { method: 'POST', body: JSON.stringify({ dir: el.dataset.dir, title: el.dataset.title, resume: el.dataset.id, kind: el.dataset.kind || undefined }) });
       close();
       await refreshSessions();
       switchTo(name);

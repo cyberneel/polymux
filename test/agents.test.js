@@ -127,6 +127,7 @@ test('a Codex/agy session gets its id, busy/idle and conversation from the trans
   assert.equal(agy.turnEnded(L([...steps, { type: 'PLANNER_RESPONSE', content: 'Hello.' }])), true);
   assert.deepEqual(agy.messages(L([...steps, { type: 'PLANNER_RESPONSE', content: 'Hello.' }])), [{ role: 'user', text: 'hi' }, { role: 'assistant', text: 'Hello.' }]);
   assert.equal(agy.transcriptOf(`/h/.gemini/antigravity-cli/conversations/${id}.db-wal`).file, `/h/.gemini/antigravity-cli/brain/${id}/.system_generated/logs/transcript.jsonl`);
+  assert.equal(agy.transcriptOf(`/h/.gemini/antigravity-cli/presence/${id}.lock`).id, id); // what a live agy holds open
 });
 
 test('a session whose last turn hit the account limit reads out of usage, until the next prompt', async () => {

@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { readdir, stat, open } from 'node:fs/promises';
 import { join, dirname, basename } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -221,4 +222,22 @@ export async function listHistory() {
   );
 
   return { sessions, truncated, total: files.length };
+}
+
+// Past agy conversations, from agy's own index (title, folder, last change), so a closed agy tile
+// can be resumed like a Claude one. Only folders a session can open; agy's scratch runs stay out.
+export function agyHistory() {
+  let db;
+  try {
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+    db = new DatabaseSync(join(homedir(), '.gemini', 'antigravity-cli', 'conversation_summaries.db'), { readOnly: true });
+    return db.prepare(`SELECT conversation_id id, title, workspace_uris ws, last_modified_time t FROM conversation_summaries
+      WHERE nesting_depth = 0 ORDER BY last_modified_time DESC LIMIT ${MAX_RESULTS}`).all()
+      .map((r) => {
+        let cwd = '';
+        try { cwd = fileURLToPath(JSON.parse(r.ws)[0]); } catch { /* no folder */ }
+        return { sessionId: r.id, kind: 'agy', cwd, gitBranch: '', title: r.title || '(untitled session)', mode: null, lastModified: Date.parse(r.t) || 0, sizeKb: 0 };
+      })
+      .filter((s) => s.cwd && config.roots.some((r) => s.cwd === r || s.cwd.startsWith(r + '/')));
+  } catch { return []; } finally { db?.close(); }
 }

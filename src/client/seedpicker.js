@@ -12,10 +12,10 @@ export async function populateSeedSources(listEl, excludeId) {
   const row = (id, cwd, title) =>
     `<label class="seed-item"><input type="checkbox" data-id="${escA(id)}" data-cwd="${escA(cwd)}"><span class="seed-item-main"><span class="seed-item-title">${escA(title)}</span><span class="seed-item-meta faint">${escA(cwd || '')}</span></span></label>`;
   const a = (act.sessions || [])
-    .filter((s) => s.liveSessionId && s.liveSessionId !== excludeId)
+    .filter((s) => s.liveSessionId && s.liveSessionId !== excludeId && !(s.kind && s.kind !== 'claude'))
     .map((s) => row(s.liveSessionId, s.dir || '', s.title || s.name));
   const h = (hist.sessions || [])
-    .filter((s) => s.sessionId && s.sessionId !== excludeId)
+    .filter((s) => s.sessionId && s.sessionId !== excludeId && !s.kind) // seeding reads Claude transcripts
     .map((s) => row(s.sessionId, s.cwd || '', s.title || '(untitled)'));
   listEl.innerHTML =
     (err ? `<div class="faint" role="alert" style="padding:8px">Couldn't load every Deep Session: ${escA(err)}</div>` : '') +

@@ -676,7 +676,7 @@ function wireHistoryCards(container) {
       try {
         const { name } = await api('/api/sessions', {
           method: 'POST',
-          body: JSON.stringify({ dir: s.cwd, title: s.title, resume: s.sessionId }),
+          body: JSON.stringify({ dir: s.cwd, title: s.title, resume: s.sessionId, kind: s.kind }),
         });
         location.href = `/terminal.html?session=${encodeURIComponent(name)}`;
       } catch (e) {
@@ -724,15 +724,15 @@ async function forkFrom(resume, dir, title, btn) {
 }
 
 function historyCardHtml(s) {
-  const noCwd = !s.cwd;
+  const noCwd = !s.cwd, agy = s.kind === 'agy'; // agy: no graph or fork, those read Claude transcripts
   const runningName = liveClaudeMap.get(s.sessionId) || null;
   const noteBadge = s.noteCount ? `<button class="icon note-btn" title="${s.noteCount} update(s) from outside chats. They apply on resume." data-note-id="${esc(s.sessionId)}">${s.noteCount} note${s.noteCount === 1 ? '' : 's'}</button>` : '';
-  const graphBtn = `<button class="icon graph-btn" title="Deep Session graph" data-graph="${esc(s.sessionId)}" data-cwd="${esc(s.cwd || '')}" data-gtitle="${esc(s.title)}">Graph</button>`;
-  const forkBtn = noCwd ? '' : `<button class="icon fork-btn" title="Fork into a new Deep Session (copies this Deep Session's context)" data-fork="${esc(s.sessionId)}" data-cwd="${esc(s.cwd || '')}" data-gtitle="${esc(s.title)}">${FORK_ICON}</button>`;
+  const graphBtn = agy ? '' : `<button class="icon graph-btn" title="Deep Session graph" data-graph="${esc(s.sessionId)}" data-cwd="${esc(s.cwd || '')}" data-gtitle="${esc(s.title)}">Graph</button>`;
+  const forkBtn = noCwd || agy ? '' : `<button class="icon fork-btn" title="Fork into a new Deep Session (copies this Deep Session's context)" data-fork="${esc(s.sessionId)}" data-cwd="${esc(s.cwd || '')}" data-gtitle="${esc(s.title)}">${FORK_ICON}</button>`;
   const foot = runningName
     ? `<span class="badge live"><span class="pulse"></span>running</span><div class="spacer"></div>
        ${noteBadge}${graphBtn}${forkBtn}<button class="primary open-btn">Open</button>`
-    : `${modeChip(s)}<span class="faint">${fmtAbsTime(s.lastModified)}, ${s.sizeKb} KB</span><div class="spacer"></div>
+    : `${modeChip(s)}<span class="faint">${fmtAbsTime(s.lastModified)}, ${agy ? 'Agy' : `${s.sizeKb} KB`}</span><div class="spacer"></div>
        ${noteBadge}${graphBtn}${forkBtn}<button class="primary resume-btn" ${noCwd ? 'disabled title="No recorded directory"' : ''}>Resume</button>`;
   return `<div class="card hist ${runningName ? 'isrunning' : ''}" data-id="${esc(s.sessionId)}" ${runningName ? `data-open="${esc(runningName)}"` : ''}>
     <div class="card-head">
