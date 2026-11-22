@@ -40,7 +40,9 @@ export async function captureSnapshot({ skipIfEmpty = false } = {}) {
   ).catch(() => {});
   const entries = sessions
     .filter((s) => s.dir)
-    .map((s) => ({ dir: s.dir, title: s.title, resume: s.parked?.main || s.liveSessionId || s.resumedFrom || null, kind: s.kind || undefined, origin: s.origin !== 'user' ? s.origin : undefined }));
+    // A stand-in (swap.js) restores as its original; still spent, it moves again.
+    // ponytail: the stand-in's own conversation isn't restored.
+    .map((s) => ({ dir: s.dir, title: s.title, resume: s.swap?.main || s.parked?.main || s.liveSessionId || s.resumedFrom || null, kind: s.swap?.from || s.kind || undefined, origin: s.origin !== 'user' ? s.origin : undefined }));
   if (!entries.length && skipIfEmpty) return -1; // keep last-good snapshot
   await mkdir(DIR, { recursive: true });
   const tmp = `${FILE}.tmp`;

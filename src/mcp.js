@@ -18,6 +18,7 @@ import { sendText, listSessions, capturePane, answerPrompt, relayText, openMenu,
 import { startOrQueue, queued } from './slots.js';
 import { PROVIDER_KINDS, DEFAULT_KIND, getProvider, providerAvailable } from './providers/index.js';
 import { attachAgents, deckStatus } from './agents.js';
+import { switching } from './swap.js';
 import { listTabs, claimTab, releaseTab } from './browser.js';
 import { proactiveSet } from './origin.js';
 
@@ -286,6 +287,8 @@ async function getContext(sessionId, format, maxChars, allowStale = false) {
   // transcript's own title is often just the first prompt. Folder = what a voice can say.
   const live = (await liveSessions()).find((x) => x.liveSessionId === sessionId || x.resumedFrom === sessionId);
   let g, head, messages;
+  // On a stand-in (swap.js) the session answers to its original id: read the stand-in's own.
+  if (live?.swap && !live.transcript && live.liveSessionId) sessionId = live.liveSessionId;
   if (live?.transcript) { // a running Codex/agy session: its own transcript (agents.js)
     messages = getProvider(live.kind).messages((await readFile(live.transcript, 'utf8')).split('\n'));
     g = { cwd: live.dir, title: live.title };
@@ -463,9 +466,10 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
     try { await attachAgents(sessions); } catch { /* claude agents unavailable → status degrades to idle/done */ }
     const notes = await pendingCounts().catch(() => new Map());
     const out = sessions.map((s) => {
-      const status = deckStatus(s);
+      const status = switching(s) ? 'running' : deckStatus(s); // about to carry on elsewhere (swap.js)
       return {
-        session_id: s.liveSessionId || s.resumedFrom || null,
+        // On a stand-in CLI (swap.js) it keeps its original conversation's id: Friday's links stay put.
+        session_id: s.swap?.main || s.liveSessionId || s.resumedFrom || null,
         name: s.name,
         title: redact(s.title),
         dir: s.dir,
@@ -478,7 +482,7 @@ export function createMcpServer({ sessionControl = false, caller = '' } = {}) {
         // seeded looked untouched until the user opened it, and its finished reply never relayed.
         last_activity: s.lastActivity || s.outputAt ? new Date(Math.max(s.lastActivity || 0, s.outputAt || 0)).toISOString() : null,
         pending_notes: countNotes(notes, [s.liveSessionId, s.resumedFrom]),
-        out_of_usage: s.outOfUsage || null,
+        out_of_usage: status === 'running' ? null : s.outOfUsage || null,
       };
     });
     // Starts waiting for a slot (the deck is at POLYMUX_MAX_SESSIONS).

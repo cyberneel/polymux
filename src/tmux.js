@@ -112,6 +112,7 @@ const FIELDS = [
   '#{@ccdeck_origin}',
   '#{pane_title}',
   '#{window_activity}', // last pane OUTPUT (session_activity only moves on client input)
+  '#{@ccdeck_swap}', // on a stand-in CLI while its own plan is spent (swap.js)
 ].join(SEP);
 
 export async function listSessions() {
@@ -119,7 +120,7 @@ export async function listSessions() {
   const sessions = [];
   for (const line of out.split('\n')) {
     if (!line.trim()) continue;
-    const [name, attached, activity, created, title, dir, paneCmd, resume, panePid, kind, origin, paneTitle, outAct] = line.split(SEP);
+    const [name, attached, activity, created, title, dir, paneCmd, resume, panePid, kind, origin, paneTitle, outAct, swap] = line.split(SEP);
     if (!isManagedName(name)) continue;
     sessions.push({
       name,
@@ -136,11 +137,14 @@ export async function listSessions() {
       origin: origin || 'user',   // 'proactive' = Friday-created; older sessions default to user
       paneTitle: paneTitle || '', // Claude sets it to "<status glyph> <session name>"
       outputAt: Number(outAct) * 1000 || null, // the dashboard refetches a preview only when this moves
+      swap: parseSwap(swap), // { from, main, at, until } while a stand-in CLI runs here
     });
   }
   sessions.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
   return sessions;
 }
+
+function parseSwap(v) { try { return v ? JSON.parse(v) : null; } catch { return null; } }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -395,8 +399,20 @@ export async function createSession({ dir, title, resume, fork, seed, browser, k
   if (resume && !fork) await tmux(['set-option', '-t', name, '@ccdeck_resume', resume]);
   await setMouse(name, true);
   await styleSession(name);
-  // Launch the CLI inside the login shell so the session survives if it exits.
-  // Prefix COLORTERM=truecolor so it emits 24-bit color (diffs, highlights).
+  await sendLaunch(name, provider, launch, browser);
+  // Once Claude has booted: name a fresh titled session (so the name shows in
+  // Claude and `claude --resume`) and/or type a seed prompt. Background.
+  // /rename is a Claude slash command — only send it for providers that have it.
+  const doRename = !resume && cleanTitle && provider.supportsRename;
+  // Always run: even with no rename/seed it clears the CLI's trust gate (auto-accept)
+  // so a clean session doesn't stall or close on it.
+  scheduleBoot(name, { rename: doRename ? cleanTitle : null, seed, provider }).catch(() => {});
+  return name;
+}
+
+// Launch the CLI inside the pane's login shell so the session survives if it exits.
+// Prefix COLORTERM=truecolor so it emits 24-bit color (diffs, highlights).
+async function sendLaunch(name, provider, launch, browser) {
   launch += await provider.wireFlags({ browser }); // Polymux MCP + shared browser
   // Export the read-only MCP bearer so Codex's `-c bearer_token_env_var=POLYMUX_RO`
   // can read it (Codex's HTTP MCP only takes an env-var bearer). Harmless for the
@@ -406,14 +422,21 @@ export async function createSession({ dir, title, resume, fork, seed, browser, k
   // Its own name, sent as a header by the session's MCP config (providers/claude.js).
   // launchEnv: provider env (Publik points the CLI at the deck's /publik route).
   await tmux(['send-keys', '-t', name, `${roEnv}${provider.launchEnv?.(name) || ''}POLYMUX_SESSION='${name}' COLORTERM=truecolor ${launch}`, 'Enter']);
-  // Once Claude has booted: name a fresh titled session (so the name shows in
-  // Claude and `claude --resume`) and/or type a seed prompt. Background.
-  // /rename is a Claude slash command — only send it for providers that have it.
-  const doRename = !resume && cleanTitle && provider.supportsRename;
-  // Always run: even with no rename/seed it clears the CLI's trust gate (auto-accept)
-  // so a clean session doesn't stall or close on it.
-  scheduleBoot(name, { rename: doRename ? cleanTitle : null, seed, provider }).catch(() => {});
-  return name;
+}
+
+// Swap the CLI in a session's pane and keep the session: its name, tile, title and the
+// Friday threads linked to it (swap.js). `resume` is the conversation to launch on, `tag` the
+// id the session answers to (@ccdeck_resume), `swap` the state to keep or null to clear it.
+export async function relaunch(name, { kind, resume, tag, seed, swap }) {
+  const dir = await sessionDir(name); // asserts managed + allowed
+  const provider = getProvider(kind);
+  const launch = provider.command() + provider.launchArgs({ resume }); // validates the id (400)
+  await tmux(['respawn-pane', '-k', '-t', name, '-c', dir]);
+  await tmux(['set-option', '-t', name, '@ccdeck_kind', provider.kind]);
+  await tmux(['set-option', '-t', name, ...(tag ? ['@ccdeck_resume', tag] : ['-u', '@ccdeck_resume'])]);
+  await tmux(['set-option', '-t', name, ...(swap ? ['@ccdeck_swap', JSON.stringify(swap)] : ['-u', '@ccdeck_swap'])]);
+  await sendLaunch(name, provider, launch);
+  return { booted: scheduleBoot(name, { seed, provider }).catch(() => {}) }; // settles once the seed is in
 }
 
 // Toggle tmux mouse mode + ensure a large scrollback. With mouse ON the browser

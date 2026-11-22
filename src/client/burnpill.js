@@ -60,7 +60,8 @@ function detailHtml(b) {
   const publik = !pk ? '' : pk.error ? `<div class="burn-pop-title">Publik</div><div class="faint">${esc(pk.error)}</div>`
     : `<div class="burn-pop-title">Publik</div><div class="limit"><div class="limit-top"><span>Balance</span><span>${usd(pk.balance_micros)}</span></div>
       <div class="faint">${pk.spent_today_micros != null ? `today ${usd(pk.spent_today_micros)}${pk.daily_cap_micros ? ` of ${usd(pk.daily_cap_micros)} cap` : ''}` : ''}${pk.week_used_micros != null ? `, this week ${usd(pk.week_used_micros)}` : ''}</div>
-      ${pk.top_up_url ? `<a href="${esc(pk.top_up_url)}" target="_blank" rel="noopener">Top up</a>` : ''}</div>`;
+      ${pk.top_up_url ? `<a href="${esc(pk.top_up_url)}" target="_blank" rel="noopener">Top up</a>` : ''}
+      ${b.auto ? `<label class="faint" title="Publik bills per turn, so sessions only move to it when this is on."><input type="checkbox" data-auto-publik${b.auto.publik ? ' checked' : ''}> Continue on Publik when a plan runs out</label>` : ''}</div>`;
   if (!b.available) return publik;
   return `${publik}<div class="burn-pop-title">Plan limits</div>
     ${card('Session (5h)', lim.session)}${card('Weekly', lim.weekly)}${(b.scopedWeekly || []).map((s) => card(`${esc(s.model)} weekly <span class="faint">(½ cap)</span>`, s)).join('')}${lim.monthly ? card('Monthly', lim.monthly) : ''}
@@ -89,6 +90,11 @@ export async function openBurnPopover(btn, burn, refresh) {
     p.style.right = `${Math.max(8, window.innerWidth - r.right)}px`;
   }
   document.body.appendChild(p);
+  p.addEventListener('click', (e) => { if (e.target.closest('label')) e.stopPropagation(); }); // keep it open on the toggle
+  p.addEventListener('change', (e) => {
+    const box = e.target.closest('[data-auto-publik]');
+    if (box) fetch('/api/auto-continue', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ publik: box.checked }) }).catch(() => { box.checked = !box.checked; });
+  });
   setTimeout(() => document.addEventListener('click', function h() { p.remove(); document.removeEventListener('click', h); }, { once: true }), 0);
   if (refresh) {
     const fresh = await refresh();

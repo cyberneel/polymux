@@ -8,7 +8,7 @@ import css from './styles.css';
 import { registerServiceWorker, applyUpdate } from './swreg.js';
 import { openShare } from './graph.js';
 import { openNotes } from './notes.js';
-import { openNewModal as openNewModalShared, continueTargets } from './newsession.js';
+import { openNewModal as openNewModalShared, continueTargets, swapText, backText } from './newsession.js';
 import { pickFiles, sendFiles, toast } from './upload.js';
 import { fetchBurn, renderBurnPill, openBurnPopover } from './burnpill.js';
 
@@ -89,7 +89,9 @@ function renderParked() {
   mainBtn.style.display = p ? '' : 'none';
   if (p) mainBtn.title = `On background job${p.jobName ? ` “${p.jobName}”` : ''} (summary-only context). Go back to your full-context main conversation.`;
   if (s?.outOfUsage && !providers) { providers = []; api('/api/config').then((c) => { providers = c.providers || []; renderParked(); }, () => { providers = null; }); }
-  contEl.innerHTML = continueTargets(s, providers).map((t) => `<button class="burn-pill" data-kind="${esc(t.kind)}">Continue on ${esc(t.label)}</button>`).join('');
+  if (s?.swap && !providers) { providers = []; api('/api/config').then((c) => { providers = c.providers || []; renderParked(); }, () => { providers = null; }); }
+  contEl.innerHTML = continueTargets(s, providers).map((t) => `<button class="burn-pill" data-kind="${esc(t.kind)}">Continue on ${esc(t.label)}</button>`).join('')
+    + (s?.swap ? `<span class="faint" title="Its own plan ran out. It goes back with what was done once the plan resets.">${esc(swapText(s, providers))}</span><button class="burn-pill" data-back="1">${esc(backText(s, providers))}</button>` : '');
 }
 contEl.addEventListener('click', async (e) => {
   const b = e.target.closest('button');
@@ -97,9 +99,10 @@ contEl.addEventListener('click', async (e) => {
   b.disabled = true;
   try {
     const old = currentSession;
-    const { name } = await api(`/api/sessions/${encodeURIComponent(old)}/continue`, { method: 'POST', body: JSON.stringify({ kind: b.dataset.kind }) });
-    switchTo(name);
-    disposePane(old);
+    const { name } = b.dataset.back
+      ? await api(`/api/sessions/${encodeURIComponent(old)}/back`, { method: 'POST' })
+      : await api(`/api/sessions/${encodeURIComponent(old)}/continue`, { method: 'POST', body: JSON.stringify({ kind: b.dataset.kind }) });
+    if (name !== old) { switchTo(name); disposePane(old); } // the same tile now (swap.js); kept for older servers
     await refreshSessions();
   } catch (err) { b.disabled = false; toast(err.message, { kind: 'error' }); }
 });

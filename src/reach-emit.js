@@ -41,7 +41,7 @@ function eventFor(s, from, to) {
       title: 'Polymux',
       body: `“${t}” needs your input.`,
       // Make it answerable in Friday: the session to relay the user's reply to + the prompt.
-      sessionId: s.liveSessionId || s.resumedFrom || undefined,
+      sessionId: s.swap?.main || s.liveSessionId || s.resumedFrom || undefined, // its original id on a stand-in (swap.js)
       detail: s.waitingFor || undefined,
     };
   }

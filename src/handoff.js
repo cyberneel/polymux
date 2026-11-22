@@ -68,7 +68,7 @@ async function renderSource({ sourceId, cwd, uuid, scope }) {
 // Build a handoff file from one or more source sessions. Accepts either a single
 // {sourceId, cwd, uuid} or opts.sources = [{sourceId, cwd}, …]. Summaries for
 // multiple sources are generated concurrently.
-async function buildHandoffFile(opts) {
+export async function buildHandoffFile(opts) {
   const scope = opts.scope === 'thread' ? 'thread' : 'summary';
   const sources = (Array.isArray(opts.sources) && opts.sources.length)
     ? opts.sources

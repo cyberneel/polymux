@@ -153,5 +153,9 @@ export function openNewModal({ api, cfg = {}, onCreated }) {
   });
 }
 
-// Engines a session that ran out can continue on: the other connected ones.
-export const continueTargets = (s, providers) => (s?.outOfUsage && providers || []).filter((p) => p.kind !== (s.kind || 'claude') && p.gate !== 'setup');
+// Engines a session that ran out can continue on: the other connected ones (none while it moves on its own).
+export const continueTargets = (s, providers) => (s?.outOfUsage && !s.switching && providers || []).filter((p) => p.kind !== (s.kind || 'claude') && p.gate !== 'setup');
+// A session carried by another CLI while its own plan is out (swap.js): "On Codex until 3:00 pm".
+const kindLabel = (k, providers) => (providers || []).find((p) => p.kind === k)?.label || k;
+export const swapText = (s, providers) => (s?.swap ? `On ${kindLabel(s.kind, providers)}${s.swap.until ? ` until ${new Date(s.swap.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}` : '');
+export const backText = (s, providers) => `Back to ${kindLabel(s.swap.from, providers)}`;
