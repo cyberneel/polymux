@@ -40,6 +40,9 @@ test('stand-ins: by plan left, Publik only when opted in and last, a spent CLI n
   assert.deepEqual(rankStandIns([{ kind: 'codex', gate: 'setup' }, { kind: 'agy' }], [], {}, { publik: false }), ['agy']);
   const plans = { ...claude(0.5), codex: [{ used: 0.1, resets: soon }], agy: [{ used: 0.99, resets: soon }] };
   assert.deepEqual(rankStandIns(all, [], plans, { publik: false }), ['codex', 'claude']);
+  // A Claude limit notice from hours ago, with the plan back, no longer counts; a fresh one does.
+  assert.deepEqual(rankStandIns(all, [{ kind: 'claude', outOfUsage: 'limit', lastActivity: 1 }], claude(0.1), { publik: false }), ['claude', 'codex', 'agy']);
+  assert.deepEqual(rankStandIns(all, [{ kind: 'claude', outOfUsage: 'limit', lastActivity: Date.now() }], claude(0.1), { publik: false }), ['codex', 'agy']);
 });
 
 test('plans: Codex rollout limits and agy /usage rows; a window past its reset is unused', () => {

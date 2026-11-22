@@ -80,9 +80,17 @@ const PLANS = {
 };
 const plan = (kind) => (PLANS[kind] ? PLANS[kind]().catch(() => null) : Promise.resolve(null));
 
+// A limit notice counts while its CLI's plan reads spent or can't tell, or while it's fresh (the
+// plan readings lag a minute): an old notice with the plan back stays put instead of carrying on
+// a request from hours ago.
+const isOut = (s, plans) => {
+  const ws = plans[s.kind || 'claude'];
+  return s.outOfUsage === 'limit' && (!ws || isSpent(ws) || Date.now() - Math.max(s.lastActivity || 0, s.outputAt || 0) < 5 * 60_000);
+};
+
 // Kinds that could take over a spent session right now, best first. `plans`: kind -> windows.
 export function rankStandIns(providers, sessions, plans, p) {
-  const spent = new Set(sessions.filter((x) => x.outOfUsage === 'limit').map((x) => x.kind || 'claude'));
+  const spent = new Set(sessions.filter((x) => isOut(x, plans)).map((x) => x.kind || 'claude'));
   for (const [k, ws] of Object.entries(plans)) if (isSpent(ws)) spent.add(k);
   // By plan left; one that can't tell counts as half; Publik is paid, so last.
   const left = (k) => (plans[k] ? 1 - Math.max(...plans[k].map((w) => w.used)) : k === 'publik' ? 0.1 : 0.5);
@@ -92,7 +100,7 @@ export function rankStandIns(providers, sessions, plans, p) {
     .sort((a, b) => left(b) - left(a));
 }
 
-let ready = []; // standIns() as of the last tick
+let ready = [], plansNow = {}; // as of the last tick
 // name -> until when it stays put: just moved (a resumed transcript still ends on the limit
 // notice until the seed lands, up to the summary's 2 min) or a move failed.
 const hold = new Map();
@@ -103,7 +111,7 @@ function move(name, opts) {
   return relaunch(name, opts).then(({ booted }) => { booted.finally(() => moving.delete(name)); }, (e) => { moving.delete(name); throw e; });
 }
 function willContinue(s) {
-  return s.outOfUsage === 'limit' && !s.swap && !(hold.get(s.name) > Date.now()) && ready.some((k) => k !== (s.kind || 'claude'));
+  return isOut(s, plansNow) && !s.swap && !(hold.get(s.name) > Date.now()) && ready.some((k) => k !== (s.kind || 'claude'));
 }
 // About to move, or moving and not yet told what to do: it reads as running, so Friday doesn't
 // relay the limit notice (or a half-booted CLI) as the session's answer.
@@ -177,6 +185,7 @@ async function tick(sessions) {
   // kept either way, so a session that just ran out reads as switching straight away.
   const need = sessions.some((s) => s.outOfUsage === 'limit' || s.swap);
   const plans = need ? Object.fromEntries(await Promise.all(providers.map(async (x) => [x.kind, await plan(x.kind)]))) : {};
+  plansNow = plans;
   ready = rankStandIns(providers, sessions, plans, p);
   if (!need) return;
   const planBack = (s) => Date.now() >= (s.swap.until || Infinity) && plans[s.swap.from] && !isSpent(plans[s.swap.from]);
