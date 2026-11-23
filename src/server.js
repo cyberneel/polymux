@@ -75,8 +75,8 @@ import { listRemoteSessions } from './remote.js';
 import { availableProviders } from './providers/index.js';
 import { registerAgyMcp, registerAgyHooks } from './providers/agy.js';
 import { getUsage } from './usage.js';
-import { registerPublikRoute, getWallet, runGate } from './publik.js';
-import { ensureSignedIn, readCredential, resolveProvider } from './publik-sdk.js';
+import { registerPublikRoute, getWallet, runGate, required as publikRequired } from './publik-deck.js';
+import { ensureSignedIn, readCredential, resolveProvider } from './publik.js';
 import { getPricing } from './pricing.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -161,7 +161,7 @@ app.addHook('onRequest', async (req, reply) => {
   if (req.raw.url?.startsWith('/ws/')) return; // websockets auth in their own handler
   const path = req.raw.url?.split('?')[0] || '/';
   if (PUBLIC_PATHS.has(path)) return;
-  if (path.startsWith('/publik/')) return; // Publik sessions' API route: per-session bearer (publik.js)
+  if (path.startsWith('/publik/')) return; // Publik sessions' API route: per-session bearer (publik-deck.js)
   if (isAuthed(req)) return;
 
   // Unified-hub SSO: the hub frames Polymux as <url>?sso=<token>. Redeem it
@@ -200,7 +200,7 @@ app.setNotFoundHandler(async (req, reply) => {
 
 // Liveness for the hosted rollout health poll (public — 200 = the server is serving).
 app.get('/healthz', async () => ({ ok: true }));
-// Publik sessions' Anthropic API calls (see publik.js).
+// Publik sessions' Anthropic API calls (see publik-deck.js).
 registerPublikRoute(app);
 // claude/codex/agy turn start/end hooks (see turn-telemetry.js). The key is baked into each
 // CLI's hook command; the body is read for ids only, never kept.
@@ -900,9 +900,10 @@ app.log.info(`Polymux listening on ${address} (roots: ${config.roots.join(', ')}
 // Keep Polymux's dedicated tmux server alive even when it has no sessions.
 await initServer().catch(() => {});
 
-// Opted into Publik ("Use Publik models")? Its gate runs at each start: checks the sign-in and
-// counts usage (off with DO_NOT_TRACK=1 or PUBLIK_TELEMETRY=off). Nobody else contacts Publik.
-if (readCredential()?.choice) runGate();
+// Sign in with publik: Publik's gate runs at each start, before the deck (the browser shows it), and
+// counts usage (off with DO_NOT_TRACK=1 or PUBLIK_TELEMETRY=off). POLYMUX_PUBLIK=off skips it unless
+// someone picked "Use Publik models"; then nobody else contacts Publik.
+if (publikRequired() || readCredential()?.choice) runGate(publikRequired());
 
 // Register the read-only Polymux MCP with agy (persistent, idempotent) so agy
 // sessions get the same handoff-aware toolset as Claude/Codex. Best-effort.

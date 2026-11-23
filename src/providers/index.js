@@ -40,13 +40,13 @@ export async function providerAvailable(kind) {
 // Never empty: if nothing resolves (a broken install) fall back to the default so
 // the UI still works. Claude, Codex, agy all resolve on a normal owner box.
 // A provider that can set itself up (Publik's offer) shows with gate 'setup' until it's usable,
-// then 'change'.
+// then 'own_key' while on its own key (the link switches back to yours), else 'change'.
 export async function availableProviders() {
   const avail = [];
   for (const k of PROVIDER_KINDS) {
     const p = PROVIDERS[k], on = await providerAvailable(k), offer = p.offer?.();
     if (on || (offer && await providerAvailable(DEFAULT_KIND))) {
-      avail.push({ kind: k, label: p.label, ...(p.models && { models: p.models }), ...(offer && { gate: on ? 'change' : 'setup' }) });
+      avail.push({ kind: k, label: p.label, ...(p.models && { models: p.models }), ...(offer && { gate: !on ? 'setup' : p.picked?.() ? 'own_key' : 'change' }) });
     }
   }
   return avail.length ? avail : [{ kind: DEFAULT_KIND, label: PROVIDERS[DEFAULT_KIND].label }];

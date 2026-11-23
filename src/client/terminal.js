@@ -9,6 +9,7 @@ import { registerServiceWorker, applyUpdate } from './swreg.js';
 import { openShare } from './graph.js';
 import { openNotes } from './notes.js';
 import { openNewModal as openNewModalShared, continueTargets, swapText, backText } from './newsession.js';
+import { gateAtStart } from './publikgate.js';
 import { pickFiles, sendFiles, toast } from './upload.js';
 import { fetchBurn, renderBurnPill, openBurnPopover } from './burnpill.js';
 
@@ -1057,6 +1058,7 @@ document.addEventListener('visibilitychange', () => {
 if (!currentSession) {
   location.replace('/'); // nothing to attach to: back to the dashboard
 } else {
+  gateAtStart(api); // Sign in with publik, over the terminal, while the server's start-up gate is up
   makePane(currentSession);
   showPane(currentSession);
   applySidebar();

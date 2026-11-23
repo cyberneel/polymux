@@ -7,7 +7,7 @@ import { join } from 'node:path';
 const home = mkdtempSync(join(tmpdir(), 'publik-test-'));
 Object.assign(process.env, { HOME: home, XDG_CONFIG_HOME: join(home, '.config'), POLYMUX_SECRET: 's', PUBLIK_ORIGIN: 'https://publik.test', PUBLIK_APP_TOKEN: 'pat_test' });
 for (const k of ['PUBLIK_API_KEY', 'DO_NOT_TRACK', 'PUBLIK_TELEMETRY']) delete process.env[k];
-const { fold, sessionToken, registerPublikRoute } = await import('../src/publik.js');
+const { fold, sessionToken, registerPublikRoute, runGate, required } = await import('../src/publik-deck.js');
 const { default: Fastify } = await import('fastify');
 
 test('fold moves system messages into the system prompt and maps models', () => {
@@ -68,7 +68,7 @@ test('route: per-session token, key from ~/.publik/key, folded body', async () =
   assert.deepEqual(urls, ['https://sys.test/api/publik/v1/messages?beta=true', 'https://publik.test/api/v1/messages?beta=true']);
 });
 
-test('Use Publik models: the gate from the browser, then the install key wins; Change can be cancelled', async () => {
+test('Use Publik models: the gate from the browser, then the install key wins; Change = Use my own key; the start-up gate has no Cancel', async () => {
   const app = Fastify();
   registerPublikRoute(app);
   const get = async () => (await app.inject({ url: '/api/publik' })).json();
@@ -98,9 +98,7 @@ test('Use Publik models: the gate from the browser, then the install key wins; C
     st = await post('action', { action: 'sign_in' });
     assert.equal(st.open_url, 'https://publik.test/claim/x');
     claimed = true; // the person signs in in the browser; the gate's 3 s poll sees it
-    st = await waitFor((x) => x.screen?.title === 'Connect your plan');
-    st = await post('action', { action: 'connect' });
-    st = await waitFor((x) => x.state === 'connected');
+    st = await waitFor((x) => x.state === 'connected'); // no pay screen: publik is the choice
 
     const cred = join(home, '.config', 'publik', 'apps', 'polymux.json');
     assert.equal(statSync(cred).mode & 0o777, 0o600);
@@ -112,12 +110,26 @@ test('Use Publik models: the gate from the browser, then the install key wins; C
     await session();
     assert.deepEqual(upstream.at(-1), { url: 'https://publik.test/api/v1/messages', auth: 'Bearer pk_live_t' }); // the install key beats ~/.publik/key
 
-    // Change: the choice is asked again; live sessions stay on Publik meanwhile; Cancel restores it.
-    await post('start');
-    await waitFor((x) => x.screen?.title === 'Connect your plan');
+    // Change = Use my own key: off the install key (back to ~/.publik/key here); Use Publik models again puts it back.
+    assert.equal((await post('start')).state, 'connected');
+    assert.equal(JSON.parse(readFileSync(cred, 'utf8')).choice, 'own_key');
     await session();
-    assert.equal(upstream.at(-1).auth, 'Bearer pk_live_t');
-    assert.equal((await post('cancel')).state, 'connected');
+    assert.equal(upstream.at(-1).auth, 'Bearer pk_test_x');
+    await post('start');
+    await waitFor((x) => x.state === 'connected');
     assert.equal(JSON.parse(readFileSync(cred, 'utf8')).choice, 'publik');
+
+    // The start-up gate: on unless POLYMUX_PUBLIK=off, and Cancel doesn't get past it.
+    assert.equal(required(), true);
+    process.env.POLYMUX_PUBLIK = 'off';
+    assert.equal(required(), false);
+    delete process.env.POLYMUX_PUBLIK;
+    claimed = false;
+    runGate(true);
+    st = await waitFor((x) => x.screen?.id === 'sign_in');
+    assert.equal(st.required, true);
+    assert.equal((await post('cancel')).state, 'gate');
+    claimed = true;
+    await waitFor((x) => x.state === 'connected');
   } finally { mock.restoreAll(); }
 });

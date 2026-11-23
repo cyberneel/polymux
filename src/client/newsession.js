@@ -17,7 +17,7 @@ export function openNewModal({ api, cfg = {}, onCreated }) {
     const p = providers.find((x) => x.kind === kind) || providers[0];
     // Publik can set itself up ("Use Publik models"): no key to paste.
     if (p.gate === 'setup') return `${esc(p.label)}: no key needed. <a href="#" data-gate>Use Publik models</a>`;
-    const change = p.gate === 'change' ? ` <a href="#" data-gate>Change</a>` : '';
+    const change = p.gate === 'own_key' ? ` <a href="#" data-gate>Use my own key</a>` : p.gate === 'change' ? ` <a href="#" data-gate>Use Publik models</a>` : '';
     if (!('signin' in p)) return ''; // an older server that doesn't report logins
     if (p.signin === 'account') return `${esc(p.label)}: signed in through your account${change}`;
     if (p.signin === 'deck') return `${esc(p.label)}: signed in on this deck${change}`;

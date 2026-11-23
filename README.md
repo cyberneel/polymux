@@ -275,6 +275,7 @@ for the full annotated list.
 | `POLYMUX_FRAME_ANCESTORS` | — | Extra origins allowed to iframe Polymux (CSP `frame-ancestors`), for embedding in a parent hub. Space/comma-separated bare origins. Unset = same-origin only (blocks cross-origin clickjacking). |
 | `POLYMUX_MAX_SESSIONS` | unset (no cap) | Most Deep Sessions running at once, for a small box. At the cap, an idle session Friday started is closed to make room (it stays in History); otherwise Friday's start waits in a queue (`~/.claude/cc-deck/queue.json`) and launches when a slot opens (cancel it from the dashboard), and a start from the dashboard is refused. Restore-on-boot brings back only the most recent ones. |
 | `POLYMUX_SLOT_IDLE_SECS` | `300` | How long a session Friday started must sit idle before it may be closed for a slot. |
+| `POLYMUX_PUBLIK` | on | `off` skips Sign in with publik at start-up (self-hosters); Publik stays one click away under **Use Publik models**. |
 | `POLYMUX_RESTORE` | on | `off` disables snapshot/restore across reboot. |
 | `POLYMUX_RESTORE_FILE` | `~/.claude/cc-deck/restore.json` | Snapshot location. |
 | `POLYMUX_PRICING_URL` | LiteLLM dataset | Token-pricing source for the Usage tab. |
@@ -406,16 +407,18 @@ auto-accepted on launch (see [POLYMUX_AUTO_TRUST](#configuration-env)).
   per-launch MCP flag).
 - **Publik** ([publikhq.com](https://publikhq.com), pay-as-you-go) — the normal `claude` CLI pointed
   at Polymux's `/publik/<session>/` route, which holds your key and forwards to Publik's
-  Anthropic-compatible API. **No key to paste:** pick Publik in New Session (or on the welcome
-  screen) and click **Use Publik models**. You sign in with Publik in a browser tab, then **Get a
-  plan** / **Connect your plan**, or **Use my own key** to stay on your Claude login. Polymux gets
-  its own install key (`~/.config/publik/apps/polymux.json`, mode 600); a new install starts at
-  $0.00 and linking adds $0.05 once (a turn or two). **Change** next to Publik asks again. Key
-  order: `PUBLIK_API_KEY`, that install key, then `~/.publik/key` (Friday's Connect Publik, or by
-  hand). Nothing contacts Publik until someone opts in; after that, each start checks the sign-in
-  and sends usage counts (`app_opened`, then `active_session` every 30 min, no content). Turn them
-  off with `DO_NOT_TRACK=1` or `PUBLIK_TELEMETRY=off`. `PUBLIK_SELF_TEST=1 npm start` prints
-  Publik's self-test line and exits. Pick a tier in New Session: **Balanced** (default), **Fast**
+  Anthropic-compatible API. **Sign in with publik:** at each start, Publik's module
+  (`src/publik.js`) runs before the deck, and the browser shows its screen until you've signed in
+  with Publik in a browser tab (no Cancel). That gives Polymux its own install key
+  (`~/.config/publik/apps/polymux.json`, mode 600) and makes Publik the choice, so there's no key
+  to paste and no pay screen; a new install starts at $0.00 and linking adds $0.05 once (a turn
+  or two). In New Session, **Use my own key** next to Publik goes back to `~/.publik/key` (or your
+  Claude login), and **Use Publik models** switches again. Key order: `PUBLIK_API_KEY`, that
+  install key, then `~/.publik/key` (Friday's Connect Publik, or by hand). Each start also sends
+  usage counts (`app_opened`, then `active_session` every 30 min, no content); turn them off with
+  `DO_NOT_TRACK=1` or `PUBLIK_TELEMETRY=off`. Self-hosting without Publik: `POLYMUX_PUBLIK=off`
+  skips the start-up gate, and then nothing contacts Publik until someone picks **Use Publik
+  models**. `PUBLIK_SELF_TEST=1 npm start` prints Publik's self-test line and exits. Pick a tier in New Session: **Balanced** (default), **Fast**
   or **Smart**. The CLI gets a
   per-session token, never the key. Publik sessions are Claude sessions to Polymux (status dots,
   History resume, notes), and the burn pill shows your Publik balance with a Top up link.

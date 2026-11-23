@@ -11,6 +11,7 @@ import { loadingHtml, loadSteps } from './loading.js';
 import { openNotes } from './notes.js';
 import { fetchBurn, renderBurnPill, openBurnPopover } from './burnpill.js';
 import { openHelp, maybeShowIntro } from './help.js';
+import { gateAtStart } from './publikgate.js';
 
 // Inject shared styles.
 const styleEl = document.createElement('style');
@@ -954,6 +955,7 @@ function openNewModal() {
 }
 
 // ---- boot ----
+const signedIn = gateAtStart(api); // Sign in with publik, over the deck, while the server's start-up gate is up
 (async () => {
   try { cfg = await api('/api/config'); } catch { /* defaults */ }
   render(); // Active shows a skeleton until the first refresh lands
@@ -964,7 +966,7 @@ function openNewModal() {
   loadBurn(); // top-bar ccburn pill (all tabs)
   loadSnap(); // last-snapshot age indicator
   checkVersion();
-  maybeShowIntro({ cfg, api }); // first-run walkthrough (once)
+  signedIn.then(() => maybeShowIntro({ cfg, api })); // first-run walkthrough (once), after Sign in with publik
   setInterval(refresh, 4000);
   setInterval(loadBurn, 60_000);
   setInterval(loadSnap, 60_000);

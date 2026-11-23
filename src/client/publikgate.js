@@ -1,10 +1,12 @@
 // "Use Publik models": Publik's sign-in gate as a modal. The gate itself runs in the server
-// (src/publik.js, which holds the key); this shows its screens, presses its buttons, and opens the
+// (src/publik-deck.js, which holds the key); this shows its screens, presses its buttons, and opens the
 // links it asks for (sign in, get a plan) in a new tab. onDone runs once the gate is finished or
 // cancelled.
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export function openPublikGate({ api, onDone }) {
+// required: the start-up gate (Sign in with publik before the deck). It is already running, has no
+// Cancel, and nothing gets past it.
+export function openPublikGate({ api, onDone, required = false }) {
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = '<div class="modal"></div>';
@@ -34,7 +36,7 @@ export function openPublikGate({ api, onDone }) {
       ${s?.note ? `<p class="faint">${esc(s.note)}</p>` : ''}
       ${link ? `<p class="faint">Nothing opened? <a href="${esc(link)}" target="_blank" rel="noopener">Open Publik</a></p>` : ''}
       <div class="error">${esc(err)}</div>
-      <div class="modal-actions"><button data-esc data-cancel>Cancel</button>${(s?.buttons || []).map((b, i) =>
+      <div class="modal-actions">${required ? '' : '<button data-esc data-cancel>Cancel</button>'}${(s?.buttons || []).map((b, i) =>
         `<button data-action="${esc(b.action)}"${i === 0 ? ' class="primary"' : ''}>${esc(b.label)}</button>`).join('')}</div>`;
   };
 
@@ -61,7 +63,11 @@ export function openPublikGate({ api, onDone }) {
   });
 
   const poll = () => api('/api/publik').then((st) => !ended && render(st), () => {});
-  api('/api/publik/start', { method: 'POST' })
+  (required ? api('/api/publik') : api('/api/publik/start', { method: 'POST' }))
     .then((st) => { render(st); timer = setInterval(poll, 2000); })
     .catch((err) => render({ state: 'gate', screen: null }, err.message));
 }
+
+// Page load: if the server's start-up gate is up, show it over the page. Resolves once it's done.
+export const gateAtStart = (api) => api('/api/publik').then((st) => st.state === 'gate' && st.required
+  && new Promise((onDone) => openPublikGate({ api, required: true, onDone })), () => {});

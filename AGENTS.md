@@ -10,6 +10,7 @@
 - Never print or log a key
 - Docs: https://publikhq.com/llms.txt, https://publikhq.com/developers, https://publikhq.com/skills/api.md
 
-In Polymux the gate (src/publik-sdk.js, Publik's module) runs only once someone picks "Use Publik
-models" (src/publik.js drives it from the browser), then at each start for them. Publik sessions are
+In Polymux the gate (src/publik.js, Publik's module; keep it close to upstream) runs at each start
+before the deck, and src/publik-deck.js shows its screens in the browser with no Cancel.
+POLYMUX_PUBLIK=off skips it; then it runs only once someone picks "Use Publik models". Publik sessions are
 the `claude` CLI pointed at the deck's `/publik/<session>/` route, which holds the key.
